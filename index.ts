@@ -1,8 +1,8 @@
-import express = require('express');
-import cors = require('cors');
-import * as http from 'http';
-import { JinagaServer } from 'jinaga';
-import process = require('process');
+import cors = require("cors");
+import express = require("express");
+import * as http from "http";
+import { JinagaServer } from "jinaga-server";
+import process = require("process");
 
 process.on('SIGINT', () => {
   console.log("\n\nStopping replicator\n");
