@@ -43,6 +43,8 @@ docker run -it --rm -p8080:8080 jinaga/jinaga-replicator
 To release a new version of Jinaga replicator, bump the version number, push the tag, and let GitHub Actions do the rest.
 
 ```bash
+git checkout main
+git pull
 npm version patch
 git push --follow-tags
 ```
