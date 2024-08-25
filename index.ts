@@ -1,3 +1,4 @@
+import cors = require("cors");
 import express = require("express");
 import * as http from "http";
 import { JinagaServer } from "jinaga-server";
@@ -14,6 +15,7 @@ const server = http.createServer(app);
 app.set('port', process.env.PORT || 8080);
 app.use(express.json());
 app.use(express.text());
+app.use(cors());
 
 const pgConnection = process.env.JINAGA_POSTGRESQL ||
   'postgresql://repl:replpw@localhost:5432/replicator';
