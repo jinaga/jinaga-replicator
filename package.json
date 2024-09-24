@@ -16,7 +16,7 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.21.0",
-    "jinaga": "^6.1.7",
+    "jinaga": "^6.2.0",
     "jinaga-server": "^3.1.5",
     "pg": "^8.7.3"
   },
