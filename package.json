@@ -15,7 +15,7 @@
   "author": "Michael L Perry",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.21.0",
+    "express": "^4.21.1",
     "jinaga": "^6.1.7",
     "jinaga-server": "^3.1.5",
     "pg": "^8.7.3"
