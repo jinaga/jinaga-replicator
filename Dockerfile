@@ -34,4 +34,9 @@ COPY --from=build /replicator .
 
 COPY start.sh /usr/local/bin/start.sh
 
+RUN mkdir -p /var/lib/replicator/rules
+VOLUME /var/lib/replicator/rules
+
+ENV JINAGA_RULES /var/lib/replicator/rules
+
 ENTRYPOINT [ "start.sh" ]
