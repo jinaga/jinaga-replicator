@@ -38,6 +38,36 @@ Run:
 docker run -it --rm -p8080:8080 jinaga/jinaga-replicator
 ```
 
+If you have rule files that you want to use with this image, you can mount a directory containing your rule files to the container's `/var/lib/replicator/rules` directory:
+
+```bash
+docker run -it --rm -p8080:8080 -v /path/to/your/rules:/var/lib/replicator/rules jinaga/jinaga-replicator
+```
+
+Replace `/path/to/your/rules` with the path to the directory on your host machine that contains your rule files.
+
+### Using as a Base Image
+
+To use this image as a base image and copy your rule files into the `/var/lib/replicator/rules` directory, create a `Dockerfile` like this:
+
+```dockerfile
+FROM jinaga/jinaga-replicator
+
+# Copy rule files into the /var/lib/replicator/rules directory
+COPY *.rule /var/lib/replicator/rules/
+
+# Ensure the rule files have the correct permissions
+RUN chmod -R 755 /var/lib/replicator/rules
+```
+
+Build the new Docker image:
+
+```bash
+docker build -t my-replicator-with-rules .
+```
+
+This will create a new Docker image named `my-replicator-with-rules` with the rule files included.
+
 ## Release
 
 To release a new version of Jinaga replicator, bump the version number, push the tag, and let GitHub Actions do the rest.
