@@ -5,7 +5,7 @@ WORKDIR /replicator
 COPY package.json .
 COPY package-lock.json .
 COPY tsconfig.json .
-COPY index.ts .
+COPY *.ts .
 RUN npm ci
 RUN npm run build
 
