@@ -68,6 +68,74 @@ docker build -t my-replicator-with-policies .
 
 This will create a new Docker image named `my-replicator-with-policies` with the policy files included.
 
+## Security Policies
+
+Policies determine who is authorized to write facts, and to whom to distribute facts.
+They also determine the conditions under which to purge facts.
+Authorization, distribution, and purge rules are defined in policy files.
+
+### Policy Files
+
+Policy files have three sections:
+
+- **authorization**: Who is authorized to write facts.
+- **distribution**: To whom to distribute facts.
+- **purge**: Conditions under which to purge facts.
+
+Here is an example policy file:
+
+```
+authorization {
+    (post: Blog.Post) {
+        creator: Jinaga.User [
+            creator = post->site: Blog.Site->creator: Jinaga.User
+        ]
+    } => creator
+    (deleted: Blog.Post.Deleted) {
+        creator: Jinaga.User [
+            creator = deleted->post: Blog.Post->site: Blog.Site->creator: Jinaga.User
+        ]
+    } => creator
+}
+distribution {
+    share (user: Jinaga.User) {
+        name: Blog.User.Name [
+            name->user: Jinaga.User = user
+            !E {
+                next: Blog.User.Name [
+                    next->prior: Blog.User.Name = name
+                ]
+            }
+        ]
+    } => name
+    with (user: Jinaga.User) {
+        self: Jinaga.User [
+            self = user
+        ]
+    } => self
+}
+purge {
+    (post: Blog.Post) {
+        deleted: Blog.Post.Deleted [
+            deleted->post: Blog.Post = post
+        ]
+    } => deleted
+}
+```
+
+You can produce a policy file from .NET using the `dotnet jinaga` command line tool, or from JavaScript using the `jinaga` package.
+
+### No Security Policies
+
+To run a replicator with no security policies, create an empty `no-security-policies` file in the policy directory.
+
+```bash
+touch /var/lib/replicator/policies/no-security-policies
+```
+
+This file opts-in to running the replicator with no security policies.
+If the file is not present, the replicator will exit with an error message indicating that no security policies are found.
+
 ## Release
 
 To release a new version of Jinaga replicator, bump the version number, push the tag, and let GitHub Actions do the rest.
