@@ -2,10 +2,10 @@ import { Dirent, readFile, readdir } from "fs";
 import { RuleSet } from "jinaga";
 import { join } from "path";
 
-export async function loadRuleSets(path: string): Promise<RuleSet | undefined> {
-    const fileNames = await findRuleFiles(path);
+export async function loadPolicies(path: string): Promise<RuleSet | undefined> {
+    const fileNames = await findPolicyFiles(path);
     if (fileNames.length === 0) {
-        // No rules defined; apply no rules.
+        // Leave the replicator wide open
         return undefined;
     }
 
@@ -19,7 +19,7 @@ export async function loadRuleSets(path: string): Promise<RuleSet | undefined> {
     return ruleSet;
 }
 
-async function findRuleFiles(dir: string): Promise<string[]> {
+async function findPolicyFiles(dir: string): Promise<string[]> {
     const fileNames: string[] = [];
 
     const entries = await new Promise<Dirent[]>((resolve, reject) => {
@@ -35,8 +35,8 @@ async function findRuleFiles(dir: string): Promise<string[]> {
     for (const entry of entries) {
         const fullPath = join(dir, entry.name);
         if (entry.isDirectory()) {
-            await findRuleFiles(fullPath);
-        } else if (entry.isFile() && entry.name.endsWith('.rule')) {
+            await findPolicyFiles(fullPath);
+        } else if (entry.isFile() && entry.name.endsWith('.policy')) {
             fileNames.push(fullPath);
         }
     }

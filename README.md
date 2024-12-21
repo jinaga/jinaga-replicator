@@ -38,35 +38,35 @@ Run:
 docker run -it --rm -p8080:8080 jinaga/jinaga-replicator
 ```
 
-If you have rule files that you want to use with this image, you can mount a directory containing your rule files to the container's `/var/lib/replicator/rules` directory:
+If you have policy files that you want to use with this image, you can mount a directory containing your policy files to the container's `/var/lib/replicator/policies` directory:
 
 ```bash
-docker run -it --rm -p8080:8080 -v /path/to/your/rules:/var/lib/replicator/rules jinaga/jinaga-replicator
+docker run -it --rm -p8080:8080 -v /path/to/your/policies:/var/lib/replicator/policies jinaga/jinaga-replicator
 ```
 
-Replace `/path/to/your/rules` with the path to the directory on your host machine that contains your rule files.
+Replace `/path/to/your/policies` with the path to the directory on your host machine that contains your policy files.
 
 ### Using as a Base Image
 
-To use this image as a base image and copy your rule files into the `/var/lib/replicator/rules` directory, create a `Dockerfile` like this:
+To use this image as a base image and copy your policy files into the `/var/lib/replicator/policies` directory, create a `Dockerfile` like this:
 
 ```dockerfile
 FROM jinaga/jinaga-replicator
 
-# Copy rule files into the /var/lib/replicator/rules directory
-COPY *.rule /var/lib/replicator/rules/
+# Copy policy files into the /var/lib/replicator/policies directory
+COPY *.policy /var/lib/replicator/policies/
 
-# Ensure the rule files have the correct permissions
-RUN chmod -R 755 /var/lib/replicator/rules
+# Ensure the policy files have the correct permissions
+RUN chmod -R 755 /var/lib/replicator/policies
 ```
 
 Build the new Docker image:
 
 ```bash
-docker build -t my-replicator-with-rules .
+docker build -t my-replicator-with-policies .
 ```
 
-This will create a new Docker image named `my-replicator-with-rules` with the rule files included.
+This will create a new Docker image named `my-replicator-with-policies` with the policy files included.
 
 ## Release
 
