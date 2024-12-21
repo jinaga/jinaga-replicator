@@ -17,7 +17,7 @@ app.use(express.json());
 app.use(express.text());
 
 async function initializeReplicator() {
-    const pgConnection = process.env.JINAGA_POSTGRESQL ||
+  const pgConnection = process.env.JINAGA_POSTGRESQL ||
     'postgresql://repl:replpw@localhost:5432/replicator';
   const policiesPath = process.env.JINAGA_POLICIES || 'policies';
   const ruleSet = await loadPolicies(policiesPath);
