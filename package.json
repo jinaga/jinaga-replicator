@@ -17,7 +17,7 @@
   "dependencies": {
     "express": "^4.21.2",
     "jinaga": "^6.3.0",
-    "jinaga-server": "^3.2.0",
+    "jinaga-server": "^3.3.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
