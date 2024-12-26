@@ -14,7 +14,7 @@ To get started, create a Replicator of your very own using [Docker](https://www.
 
 ```
 docker pull jinaga/jinaga-replicator
-docker run --name my-replicator -p8080:8080 jinaga/jinaga-replicator
+docker run -d --name my-replicator -p8080:8080 jinaga/jinaga-replicator
 ```
 
 This creates and starts a new container called `my-replicator`.
@@ -43,13 +43,13 @@ docker build . -t jinaga/jinaga-replicator:latest
 Run:
 
 ```bash
-docker run -it --rm -p8080:8080 jinaga/jinaga-replicator
+docker run -d --name my-replicator -p8080:8080 jinaga/jinaga-replicator
 ```
 
 If you have policy files that you want to use with this image, you can mount a directory containing your policy files to the container's `/var/lib/replicator/policies` directory:
 
 ```bash
-docker run -it --rm -p8080:8080 -v /path/to/your/policies:/var/lib/replicator/policies jinaga/jinaga-replicator
+docker run -d --name my-replicator -p8080:8080 -v /path/to/your/policies:/var/lib/replicator/policies jinaga/jinaga-replicator
 ```
 
 Replace `/path/to/your/policies` with the path to the directory on your host machine that contains your policy files.
