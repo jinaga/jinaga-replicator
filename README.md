@@ -1,4 +1,4 @@
-# jinaga-replicator
+# Jinaga Replicator
 
 The Jinaga Replicator is the central infrastructure component of a Jinaga network.
 It plays the role of:
@@ -11,10 +11,11 @@ Connect your application to the Replicator to store and share facts.
 Connect replicators to one another to share facts across a network.
 
 To get started, create a Replicator of your very own using [Docker](https://www.docker.com/products/docker-desktop/).
+To experiment, you will want to run a Replicator with no security policies.
 
 ```
-docker pull jinaga/jinaga-replicator
-docker run -d --name my-replicator -p8080:8080 jinaga/jinaga-replicator
+docker pull jinaga/jinaga-replicator-no-security-policies
+docker run -d --name my-replicator -p8080:8080 jinaga/jinaga-replicator-no-security-policies
 ```
 
 This creates and starts a new container called `my-replicator`.
@@ -31,50 +32,6 @@ export const j = JinagaBrowser.create({
 ```
 
 Learn more at [jinaga.com](https://jinaga.com/documents/replicator/).
-
-## Build and Run
-
-Build:
-
-```bash
-docker build . -t jinaga/jinaga-replicator:latest
-```
-
-Run:
-
-```bash
-docker run -d --name my-replicator -p8080:8080 jinaga/jinaga-replicator
-```
-
-If you have policy files that you want to use with this image, you can mount a directory containing your policy files to the container's `/var/lib/replicator/policies` directory:
-
-```bash
-docker run -d --name my-replicator -p8080:8080 -v /path/to/your/policies:/var/lib/replicator/policies jinaga/jinaga-replicator
-```
-
-Replace `/path/to/your/policies` with the path to the directory on your host machine that contains your policy files.
-
-### Using as a Base Image
-
-To use this image as a base image and copy your policy files into the `/var/lib/replicator/policies` directory, create a `Dockerfile` like this:
-
-```dockerfile
-FROM jinaga/jinaga-replicator
-
-# Copy policy files into the /var/lib/replicator/policies directory
-COPY *.policy /var/lib/replicator/policies/
-
-# Ensure the policy files have the correct permissions
-RUN chmod -R 755 /var/lib/replicator/policies
-```
-
-Build the new Docker image:
-
-```bash
-docker build -t my-replicator-with-policies .
-```
-
-This will create a new Docker image named `my-replicator-with-policies` with the policy files included.
 
 ## Security Policies
 
@@ -133,6 +90,38 @@ purge {
 
 You can produce a policy file from .NET using the `dotnet jinaga` command line tool, or from JavaScript using the `jinaga` package.
 
+### Mounting Policy Files
+
+To run a replicator with security policies, mount a directory containing your policy files to the container's `/var/lib/replicator/policies` directory:
+
+```bash
+docker run -d --name my-replicator -p8080:8080 -v /path/to/your/policies:/var/lib/replicator/policies jinaga/jinaga-replicator
+```
+
+Replace `/path/to/your/policies` with the path to the directory on your host machine that contains your policy files.
+
+### Using as a Base Image
+
+To use this image as a base image and copy your policy files into the `/var/lib/replicator/policies` directory, create a `Dockerfile` like this:
+
+```dockerfile
+FROM jinaga/jinaga-replicator
+
+# Copy policy files into the /var/lib/replicator/policies directory
+COPY *.policy /var/lib/replicator/policies/
+
+# Ensure the policy files have the correct permissions
+RUN chmod -R 755 /var/lib/replicator/policies
+```
+
+Build the new Docker image:
+
+```bash
+docker build -t my-replicator-with-policies .
+```
+
+This will create a new Docker image named `my-replicator-with-policies` with the policy files included.
+
 ### No Security Policies
 
 To run a replicator with no security policies, create an empty `no-security-policies` file in the policy directory.
@@ -146,6 +135,20 @@ If the file is not present, the replicator will exit with an error message indic
 
 The image `jinaga/jinaga-replicator-no-security-policies` is a variant of the Jinaga Replicator image that does not run any security policies.
 It includes a `no-security-policies` file in the `/var/lib/replicator/policies` directory.
+
+## Build and Run
+
+Build:
+
+```bash
+docker build . -t jinaga/jinaga-replicator:latest
+```
+
+Run:
+
+```bash
+docker run -d --name my-replicator -p8080:8080 jinaga/jinaga-replicator
+```
 
 ## Release
 
