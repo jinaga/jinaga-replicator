@@ -5,7 +5,7 @@ WORKDIR /replicator
 COPY package.json .
 COPY package-lock.json .
 COPY tsconfig.json .
-COPY index.ts .
+COPY *.ts .
 RUN npm ci
 RUN npm run build
 
@@ -33,5 +33,10 @@ RUN apk add --update nodejs npm
 COPY --from=build /replicator .
 
 COPY start.sh /usr/local/bin/start.sh
+
+RUN mkdir -p /var/lib/replicator/policies
+VOLUME /var/lib/replicator/policies
+
+ENV JINAGA_POLICIES /var/lib/replicator/policies
 
 ENTRYPOINT [ "start.sh" ]
