@@ -1,7 +1,15 @@
 # jinaga-replicator
 
-The Jinaga Replicator is a single machine in a network.
-It stores and shares facts.
+The Jinaga Replicator is the central infrastructure component of a Jinaga network.
+It plays the role of:
+- Database
+- REST API
+- Message queue
+- WebSocket server
+
+Connect your application to the Replicator to store and share facts.
+Connect replicators to one another to share facts across a network.
+
 To get started, create a Replicator of your very own using [Docker](https://www.docker.com/products/docker-desktop/).
 
 ```
@@ -135,6 +143,9 @@ touch /var/lib/replicator/policies/no-security-policies
 
 This file opts-in to running the replicator with no security policies.
 If the file is not present, the replicator will exit with an error message indicating that no security policies are found.
+
+The image `jinaga/jinaga-replicator-no-security-policies` is a variant of the Jinaga Replicator image that does not run any security policies.
+It includes a `no-security-policies` file in the `/var/lib/replicator/policies` directory.
 
 ## Release
 
