@@ -1,4 +1,4 @@
-FROM node:18-alpine as build
+FROM node:18-alpine AS build
 
 WORKDIR /replicator
 
@@ -19,14 +19,14 @@ COPY --from=build /replicator/package.json .
 COPY --from=build /replicator/package-lock.json .
 COPY --from=build /replicator/dist/ .
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 RUN npm ci
 
-ENV POSTGRES_PASSWORD adminpw
-ENV APP_USERNAME repl
-ENV APP_PASSWORD replpw
-ENV APP_DATABASE replicator
+ENV POSTGRES_PASSWORD=adminpw
+ENV APP_USERNAME=repl
+ENV APP_PASSWORD=replpw
+ENV APP_DATABASE=replicator
 
 RUN apk add --update nodejs npm
 
@@ -37,6 +37,6 @@ COPY start.sh /usr/local/bin/start.sh
 RUN mkdir -p /var/lib/replicator/policies
 VOLUME /var/lib/replicator/policies
 
-ENV JINAGA_POLICIES /var/lib/replicator/policies
+ENV JINAGA_POLICIES=/var/lib/replicator/policies
 
 ENTRYPOINT [ "start.sh" ]
