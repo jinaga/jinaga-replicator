@@ -1,4 +1,5 @@
-import { readFile, readdir } from "fs/promises";
+import { readdir, readFile } from "fs/promises";
+import * as iconv from "iconv-lite";
 import { RuleSet } from "jinaga";
 import { join } from "path";
 
@@ -55,7 +56,19 @@ async function findPolicyFiles(dir: string): Promise<{ policyFiles: string[], ha
 }
 
 async function loadRuleSetFromFile(path: string): Promise<RuleSet> {
-    const description = await readFile(path, 'utf8');
+    const buffer = await readFile(path);
+    const description = iconv.decode(buffer, 'utf-16');
     const ruleSet = RuleSet.loadFromDescription(description);
     return ruleSet;
 }
+
+// To run this test, build the project and then run this file with Node.js.
+/*
+npm run build
+node dist/loadPolicies.js
+*/
+loadRuleSetFromFile("./test/blog.bin")
+    .then(ruleSet => {
+        console.log(ruleSet.authorizationRules.saveToDescription());
+    })
+    .catch(console.error);
