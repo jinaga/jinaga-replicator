@@ -1,4 +1,6 @@
-import { readFile, readdir } from "fs/promises";
+import { readdir, readFile } from "fs/promises";
+import * as iconv from "iconv-lite";
+import * as chardet from "chardet";
 import { RuleSet } from "jinaga";
 import { join } from "path";
 
@@ -55,7 +57,35 @@ async function findPolicyFiles(dir: string): Promise<{ policyFiles: string[], ha
 }
 
 async function loadRuleSetFromFile(path: string): Promise<RuleSet> {
-    const description = await readFile(path, 'utf8');
+    const buffer = await readFile(path);
+    const encoding = chardet.detect(buffer) || 'utf-8';
+    const description = iconv.decode(buffer, encoding);
     const ruleSet = RuleSet.loadFromDescription(description);
     return ruleSet;
 }
+
+// To run this test, build the project and then run this file with Node.js.
+/*
+npm run build
+node dist/loadPolicies.js
+*/
+loadRuleSetFromFile("./test/windows.bin")
+    .then(ruleSet => {
+        console.log("Windows files work.");
+    })
+    .catch(console.error);
+loadRuleSetFromFile("./test/linux.bin")
+    .then(ruleSet => {
+        console.log("Linux files work.");
+    })
+    .catch(console.error);
+loadRuleSetFromFile("./test/utf8.bin")
+    .then(ruleSet => {
+        console.log("UTF-8 files work.");
+    })
+    .catch(console.error);
+loadRuleSetFromFile("./test/utf8bom.bin")
+    .then(ruleSet => {
+        console.log("UTF-8 with BOM files work.");
+    })
+    .catch(console.error);
