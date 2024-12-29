@@ -1,6 +1,6 @@
 {
   "name": "jinaga-replicator",
-  "version": "3.3.2",
+  "version": "3.3.3",
   "description": "A unit of fact storage and distribution within a Jinaga network",
   "main": "dist/index.js",
   "scripts": {
