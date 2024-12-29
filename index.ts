@@ -31,6 +31,7 @@ async function initializeReplicator() {
   app.use('/jinaga', handler);
 
   server.listen(app.get('port'), () => {
+    printLogo();
     console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
     console.log('  Press CTRL-C to stop\n');
   });
@@ -38,5 +39,66 @@ async function initializeReplicator() {
 
 initializeReplicator()
   .catch((error) => {
+    printError();
     console.error("Error initializing replicator.", error);
   });
+
+function printLogo() {
+  console.log(`
+        *****************************            
+     *** *******                     *****       
+   **  ***                                ***    
+ **    **                                    **  
+ *     *                                      ** 
+**     **               *******************    * 
+**      **       ***********              ***  **
+**      ***   **            *****           ** **
+ **      ***  **                 *          ** * 
+ **        ** **                **          **** 
+  **        *****               **         ****  
+   **        *****              *          ***   
+    **         ***            **          ***    
+     **          **         ****         **      
+      **           **      ****         **       
+       **           ***  **  *         **        
+        **            ***   **        **         
+          **               **        **          
+          ***             **        **           
+          ****           **        **            
+           *****       ***        **             
+             ***********        **               
+              *** ***         **                 
+                 ***       ***                   
+                    *******                      
+`);
+}
+
+function printError() {
+  console.log(`
+                   *********                     
+                ***         ***                  
+              **               **                
+            ***                  **              
+           ****                   **             
+          ****                     **            
+          ***          ****          *           
+         **           ******          *          
+        **            ******           *         
+       **             ******           **        
+      *               ******            **       
+    **                *****              **      
+   **                 *****               ***    
+   *                   ****                ***   
+  **                   ***                  ***  
+ **                    **                    *** 
+ *                                             * 
+**                    ****                     **
+**                   ******                    **
+**                    *****                    * 
+ **                                           ** 
+  *                                         ***  
+   **                                     ***    
+      ***   ******                  *****        
+          ********* **************               
+`);
+}
