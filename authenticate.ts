@@ -185,6 +185,18 @@ async function loadConfigurationFromFile(path: string): Promise<AuthenticationCo
         throw new Error(`Invalid authentication configuration in ${path}`);
     }
 
+    const publicKeyAlgorithm = validatePublicKeyAlgorithm(config.algorithm);
+    if (publicKeyAlgorithm && !config.public_key) {
+        throw new Error(`Public key missing in ${path}`);
+    }
+    const sharedKeyAlgorithm = validateSharedKeyAlgorithm(config.algorithm);
+    if (sharedKeyAlgorithm && !config.shared_key) {
+        throw new Error(`Shared key missing in ${path}`);
+    }
+    if (!publicKeyAlgorithm && !sharedKeyAlgorithm) {
+        throw new Error(`Invalid algorithm in ${path}`);
+    }
+
     return {
         provider: config.provider,
         issuer: config.issuer,

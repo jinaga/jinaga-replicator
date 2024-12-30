@@ -33,6 +33,71 @@ export const j = JinagaBrowser.create({
 
 Learn more at [jinaga.com](https://jinaga.com/documents/replicator/).
 
+## Authentication
+
+The Jinaga Replicator supports authentication using JSON Web Tokens (JWT).
+You can configure authentication providers by placing JSON files in the authentication folder.
+
+### Authentication Folder
+
+To use authentication, mount a directory containing your authentication provider files to the container's `/var/lib/replicator/authentication` directory:
+
+```bash
+docker run -d --name my-replicator -p8080:8080 -v /path/to/your/authentication:/var/lib/replicator/authentication jinaga/jinaga-replicator
+```
+
+Replace `/path/to/your/authentication` with the path to the directory on your host machine that contains your authentication provider files.
+
+### JSON Provider File Specification
+
+Each JSON provider file should have the following structure:
+
+```json
+{
+    "provider": "string",
+    "issuer": "string",
+    "audience": "string",
+    "algorithm": "string",
+    "public_key": "string (optional)",
+    "shared_key": "string (optional)"
+}
+```
+
+- `provider`: A unique identifier for the authentication provider.
+- `issuer`: The expected issuer (`iss`) claim in the JWT.
+- `audience`: The expected audience (`aud`) claim in the JWT.
+- `algorithm`: The algorithm used to sign the JWT. Supported algorithms include `RS256`, `HS256`, etc.
+- `public_key`: The public key used to verify the JWT signature (for asymmetric algorithms).
+- `shared_key`: The shared key used to verify the JWT signature (for symmetric algorithms).
+
+### Example: RSA Validation
+
+Here is an example of an authentication provider file using RSA validation:
+
+```json
+{
+    "provider": "example-rsa",
+    "issuer": "https://example.com",
+    "audience": "my-replicator",
+    "algorithm": "RS256",
+    "public_key": "-----BEGIN PUBLIC KEY-----\n..."
+}
+```
+
+### Example: Shared-Key Validation
+
+Here is an example of an authentication provider file using shared-key validation:
+
+```json
+{
+    "provider": "example-shared",
+    "issuer": "https://example.com",
+    "audience": "my-replicator",
+    "algorithm": "HS256",
+    "shared_key": "your-shared-key"
+}
+```
+
 ## Security Policies
 
 Policies determine who is authorized to write facts, and to whom to distribute facts.
