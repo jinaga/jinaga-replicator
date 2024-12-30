@@ -14,6 +14,8 @@ interface AuthenticationConfiguration {
 
 export function authenticate(req: Request, res: Response, next: NextFunction) {
     const configs: AuthenticationConfiguration[] = [];
+    const allowAnonymous = true;
+
     let possibleConfigs: AuthenticationConfiguration[] = configs;
 
     try {
@@ -106,6 +108,10 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
                     }
                 }
             }
+        }
+        else if (!allowAnonymous) {
+            res.status(401).send("No token");
+            return;
         }
         next();
     } catch (error) {
