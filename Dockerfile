@@ -39,4 +39,9 @@ VOLUME /var/lib/replicator/policies
 
 ENV JINAGA_POLICIES=/var/lib/replicator/policies
 
+RUN mkdir -p /var/lib/replicator/authentication
+VOLUME /var/lib/replicator/authentication
+
+ENV JINAGA_AUTHENTICATION=/var/lib/replicator/authentication
+
 ENTRYPOINT [ "start.sh" ]
