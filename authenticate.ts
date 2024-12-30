@@ -12,110 +12,109 @@ interface AuthenticationConfiguration {
     sharedKey?: string;
 }
 
-export function authenticate(req: Request, res: Response, next: NextFunction) {
-    const configs: AuthenticationConfiguration[] = [];
-    const allowAnonymous = true;
+export function authenticate(configs: AuthenticationConfiguration[], allowAnonymous: boolean) {
+    return (req: Request, res: Response, next: NextFunction) => {
+        let possibleConfigs: AuthenticationConfiguration[] = configs;
 
-    let possibleConfigs: AuthenticationConfiguration[] = configs;
-
-    try {
-        const authorization = req.headers.authorization;
-        if (authorization) {
-            const match = authorization.match(/^Bearer (.*)$/);
-            if (match) {
-                const token = match[1];
-                const payload = decode(token);
-                if (!payload || typeof payload !== "object") {
-                    res.status(401).send("Invalid token");
-                    return;
-                }
-
-                // Validate the subject.
-                const subject = payload.sub;
-                if (typeof subject !== "string") {
-                    res.status(401).send("Invalid subject");
-                    return;
-                }
-
-                // Validate the issuer and audience.
-                const issuer = payload.iss;
-                possibleConfigs = configs.filter(config => config.issuer === issuer);
-                if (possibleConfigs.length === 0) {
-                    res.status(401).send("Invalid issuer");
-                    return;
-                }
-                const audience = payload.aud;
-                possibleConfigs = possibleConfigs.filter(config => config.audience === audience);
-                if (possibleConfigs.length === 0) {
-                    res.status(401).send("Invalid audience");
-                    return;
-                }
-
-                // Validate the algorithm.
-                if (typeof payload.alg !== "string") {
-                    res.status(401).send("Invalid algorithm");
-                    return;
-                }
-                possibleConfigs = possibleConfigs.filter(config => config.algorithm === payload.alg);
-                if (possibleConfigs.length === 0) {
-                    res.status(401).send("Invalid algorithm");
-                    return;
-                }
-                const publicKeyAlgorithm = validatePublicKeyAlgorithm(payload.alg);
-                const sharedKeyAlgorithm = validateSharedKeyAlgorithm(payload.alg);
-                const algorithm = publicKeyAlgorithm ?? sharedKeyAlgorithm;
-                if (!algorithm) {
-                    res.status(401).send("Invalid algorithm");
-                    return;
-                }
-
-                let verified: string | JwtPayload = "";
-                let provider: string = "";
-                // Try each possible configuration to find the matching public key.
-                for (const config of possibleConfigs) {
-                    const publicKeyOrSecret = publicKeyAlgorithm ? config.publicKey : config.sharedKey;
-                    if (!publicKeyOrSecret) {
-                        continue;
-                    }
-                    try {
-                        // Validate the signature.
-                        verified = verify(token, publicKeyOrSecret, {
-                            algorithms: [algorithm],
-                            clockTolerance: CLOCK_SKEW
-                        });
-                    } catch (error) {
-                        continue;
+        try {
+            const authorization = req.headers.authorization;
+            if (authorization) {
+                const match = authorization.match(/^Bearer (.*)$/);
+                if (match) {
+                    const token = match[1];
+                    const payload = decode(token);
+                    if (!payload || typeof payload !== "object") {
+                        res.status(401).send("Invalid token");
+                        return;
                     }
 
-                    if (verified) {
-                        provider = config.provider;
-                        break;
+                    // Validate the subject.
+                    const subject = payload.sub;
+                    if (typeof subject !== "string") {
+                        res.status(401).send("Invalid subject");
+                        return;
                     }
-                }
 
-                if (!verified) {
-                    res.status(401).send("Invalid signature");
-                    return;
-                }
+                    // Validate the issuer and audience.
+                    const issuer = payload.iss;
+                    possibleConfigs = configs.filter(config => config.issuer === issuer);
+                    if (possibleConfigs.length === 0) {
+                        res.status(401).send("Invalid issuer");
+                        return;
+                    }
+                    const audience = payload.aud;
+                    possibleConfigs = possibleConfigs.filter(config => config.audience === audience);
+                    if (possibleConfigs.length === 0) {
+                        res.status(401).send("Invalid audience");
+                        return;
+                    }
 
-                // Pass the user record to the next handler.
-                const targetReq = <any>req;
-                targetReq.user = {
-                    id: subject,
-                    provider: provider,
-                    profile: {
-                        displayName: payload.display_name ?? ""
+                    // Validate the algorithm.
+                    if (typeof payload.alg !== "string") {
+                        res.status(401).send("Invalid algorithm");
+                        return;
+                    }
+                    possibleConfigs = possibleConfigs.filter(config => config.algorithm === payload.alg);
+                    if (possibleConfigs.length === 0) {
+                        res.status(401).send("Invalid algorithm");
+                        return;
+                    }
+                    const publicKeyAlgorithm = validatePublicKeyAlgorithm(payload.alg);
+                    const sharedKeyAlgorithm = validateSharedKeyAlgorithm(payload.alg);
+                    const algorithm = publicKeyAlgorithm ?? sharedKeyAlgorithm;
+                    if (!algorithm) {
+                        res.status(401).send("Invalid algorithm");
+                        return;
+                    }
+
+                    let verified: string | JwtPayload = "";
+                    let provider: string = "";
+                    // Try each possible configuration to find the matching public key.
+                    for (const config of possibleConfigs) {
+                        const publicKeyOrSecret = publicKeyAlgorithm ? config.publicKey : config.sharedKey;
+                        if (!publicKeyOrSecret) {
+                            continue;
+                        }
+                        try {
+                            // Validate the signature.
+                            verified = verify(token, publicKeyOrSecret, {
+                                algorithms: [algorithm],
+                                clockTolerance: CLOCK_SKEW
+                            });
+                        } catch (error) {
+                            continue;
+                        }
+
+                        if (verified) {
+                            provider = config.provider;
+                            break;
+                        }
+                    }
+
+                    if (!verified) {
+                        res.status(401).send("Invalid signature");
+                        return;
+                    }
+
+                    // Pass the user record to the next handler.
+                    const targetReq = <any>req;
+                    targetReq.user = {
+                        id: subject,
+                        provider: provider,
+                        profile: {
+                            displayName: payload.display_name ?? ""
+                        }
                     }
                 }
             }
+            else if (!allowAnonymous) {
+                res.status(401).send("No token");
+                return;
+            }
+            next();
+        } catch (error) {
+            next(error);
         }
-        else if (!allowAnonymous) {
-            res.status(401).send("No token");
-            return;
-        }
-        next();
-    } catch (error) {
-        next(error);
     }
 }
 
@@ -144,7 +143,7 @@ function validatePublicKeyAlgorithm(alg: string): Algorithm | undefined {
     }
 }
 
-function validateSharedKeyAlgorithm(alg: string) : Algorithm | undefined {
+function validateSharedKeyAlgorithm(alg: string): Algorithm | undefined {
     switch (alg) {
         case 'HS256':
             return 'HS256';
