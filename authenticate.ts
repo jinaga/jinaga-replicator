@@ -1,7 +1,12 @@
 import { Request, Response, NextFunction } from "express";
 import { decode, JwtPayload, verify, Algorithm } from "jsonwebtoken";
+import { readdir, readFile } from "fs/promises";
+import { join } from "path";
+import * as chardet from "chardet";
+import * as iconv from "iconv-lite";
 
 const CLOCK_SKEW = 30; // 30 seconds
+const MARKER_FILE_NAME = "no-authentication-providers";
 
 interface AuthenticationConfiguration {
     provider: string;
@@ -116,6 +121,78 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
             next(error);
         }
     }
+}
+
+export async function loadAuthenticationConfigurations(path: string): Promise<{ configs: AuthenticationConfiguration[], allowAnonymous: boolean }> {
+    const { providerFiles, hasMarkerFile, hasAllowAnonymousFile } = await findProviderFiles(path);
+
+    if (hasMarkerFile && providerFiles.length > 0) {
+        throw new Error(`Authentication providers are disabled, but there are provider files in ${path}.`);
+    }
+
+    if (!hasMarkerFile && providerFiles.length === 0) {
+        throw new Error(`No authentication providers found in ${path}.`);
+    }
+
+    if (providerFiles.length === 0) {
+        return { configs: [], allowAnonymous: true };
+    }
+
+    const configs: AuthenticationConfiguration[] = [];
+    for (const fileName of providerFiles) {
+        const config = await loadConfigurationFromFile(fileName);
+        configs.push(config);
+    }
+
+    return { configs, allowAnonymous: hasAllowAnonymousFile };
+}
+
+async function findProviderFiles(dir: string): Promise<{ providerFiles: string[], hasMarkerFile: boolean, hasAllowAnonymousFile: boolean }> {
+    const providerFiles: string[] = [];
+    let hasMarkerFile = false;
+    let hasAllowAnonymousFile = false;
+
+    const entries = await readdir(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+            const result = await findProviderFiles(fullPath);
+            providerFiles.push(...result.providerFiles);
+            hasMarkerFile = hasMarkerFile || result.hasMarkerFile;
+            hasAllowAnonymousFile = hasAllowAnonymousFile || result.hasAllowAnonymousFile;
+        } else if (entry.isFile()) {
+            if (entry.name.endsWith('.provider')) {
+                providerFiles.push(fullPath);
+            } else if (entry.name === MARKER_FILE_NAME) {
+                hasMarkerFile = true;
+            } else if (entry.name === "allow-anonymous") {
+                hasAllowAnonymousFile = true;
+            }
+        }
+    }
+
+    return { providerFiles, hasMarkerFile, hasAllowAnonymousFile };
+}
+
+async function loadConfigurationFromFile(path: string): Promise<AuthenticationConfiguration> {
+    const buffer = await readFile(path);
+    const encoding = chardet.detect(buffer) || 'utf-8';
+    const content = iconv.decode(buffer, encoding);
+    const config = JSON.parse(content);
+
+    if (!config.provider || !config.issuer || !config.audience || !config.algorithm) {
+        throw new Error(`Invalid authentication configuration in ${path}`);
+    }
+
+    return {
+        provider: config.provider,
+        issuer: config.issuer,
+        audience: config.audience,
+        algorithm: config.algorithm,
+        publicKey: config.public_key,
+        sharedKey: config.shared_key
+    };
 }
 
 function validatePublicKeyAlgorithm(alg: string): Algorithm | undefined {
