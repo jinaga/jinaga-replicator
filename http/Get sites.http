@@ -1,4 +1,5 @@
 POST {{replicatorUrl}}/read
+Authorization: oauth2 authorization_code
 Content-Type: text/plain
 
 let creator: Jinaga.User = {
