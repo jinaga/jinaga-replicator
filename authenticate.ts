@@ -1,9 +1,9 @@
-import { Request, Response, NextFunction } from "express";
-import { decode, JwtPayload, verify, Algorithm } from "jsonwebtoken";
-import { readdir, readFile } from "fs/promises";
-import { join } from "path";
 import * as chardet from "chardet";
+import { NextFunction, Request, Response } from "express";
+import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
+import { decode, JwtPayload, verify } from "jsonwebtoken";
+import { join } from "path";
 
 const CLOCK_SKEW = 30; // 30 seconds
 
@@ -11,9 +11,8 @@ interface AuthenticationConfiguration {
     provider: string;
     issuer: string;
     audience: string;
-    algorithm: string;
-    publicKey?: string;
-    sharedKey?: string;
+    keyId: string;
+    key: string;
 }
 
 export function authenticate(configs: AuthenticationConfiguration[], allowAnonymous: boolean) {
@@ -53,47 +52,21 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                         return;
                     }
 
-                    // Validate the algorithm.
-                    if (typeof payload.alg !== "string") {
-                        res.status(401).send("Invalid algorithm");
-                        return;
-                    }
-                    possibleConfigs = possibleConfigs.filter(config => config.algorithm === payload.alg);
-                    if (possibleConfigs.length === 0) {
-                        res.status(401).send("Invalid algorithm");
-                        return;
-                    }
-                    const publicKeyAlgorithm = validatePublicKeyAlgorithm(payload.alg);
-                    const sharedKeyAlgorithm = validateSharedKeyAlgorithm(payload.alg);
-                    const algorithm = publicKeyAlgorithm ?? sharedKeyAlgorithm;
-                    if (!algorithm) {
-                        res.status(401).send("Invalid algorithm");
-                        return;
-                    }
-
-                    let verified: string | JwtPayload = "";
+                    let verified: string | JwtPayload | undefined;
                     let provider: string = "";
-                    // Try each possible configuration to find the matching public key.
-                    for (const config of possibleConfigs) {
-                        const publicKeyOrSecret = publicKeyAlgorithm ? config.publicKey : config.sharedKey;
-                        if (!publicKeyOrSecret) {
-                            continue;
+                    verify(token, (header, callback) => {
+                        const config = possibleConfigs.find(config => config.keyId === header.kid);
+                        if (!config) {
+                            callback(new Error("Invalid key ID"));
+                            return;
                         }
-                        try {
-                            // Validate the signature.
-                            verified = verify(token, publicKeyOrSecret, {
-                                algorithms: [algorithm],
-                                clockTolerance: CLOCK_SKEW
-                            });
-                        } catch (error) {
-                            continue;
+                        provider = config.provider;
+                        callback(null, config.key);
+                    }, (error, payload) => {
+                        if (!error) {
+                            verified = payload;
                         }
-
-                        if (verified) {
-                            provider = config.provider;
-                            break;
-                        }
-                    }
+                    });
 
                     if (!verified) {
                         res.status(401).send("Invalid signature");
@@ -159,71 +132,28 @@ async function findProviderFiles(dir: string): Promise<{ providerFiles: string[]
 }
 
 async function loadConfigurationFromFile(path: string): Promise<AuthenticationConfiguration> {
-    const buffer = await readFile(path);
-    const encoding = chardet.detect(buffer) || 'utf-8';
-    const content = iconv.decode(buffer, encoding);
-    const config = JSON.parse(content);
+    try {
+        const buffer = await readFile(path);
+        const encoding = chardet.detect(buffer) || 'utf-8';
+        const content = iconv.decode(buffer, encoding);
+        const config = JSON.parse(content);
 
-    if (!config.provider || !config.issuer || !config.audience || !config.algorithm) {
-        throw new Error(`Invalid authentication configuration in ${path}`);
-    }
+        if (!config.provider || !config.issuer || !config.audience || !config.key_id || !config.key) {
+            throw new Error(`Invalid authentication configuration`);
+        }
 
-    const publicKeyAlgorithm = validatePublicKeyAlgorithm(config.algorithm);
-    if (publicKeyAlgorithm && !config.public_key) {
-        throw new Error(`Public key missing in ${path}`);
-    }
-    const sharedKeyAlgorithm = validateSharedKeyAlgorithm(config.algorithm);
-    if (sharedKeyAlgorithm && !config.shared_key) {
-        throw new Error(`Shared key missing in ${path}`);
-    }
-    if (!publicKeyAlgorithm && !sharedKeyAlgorithm) {
-        throw new Error(`Invalid algorithm in ${path}`);
-    }
-
-    return {
-        provider: config.provider,
-        issuer: config.issuer,
-        audience: config.audience,
-        algorithm: config.algorithm,
-        publicKey: config.public_key,
-        sharedKey: config.shared_key
-    };
-}
-
-function validatePublicKeyAlgorithm(alg: string): Algorithm | undefined {
-    switch (alg) {
-        case 'RS256':
-            return 'RS256';
-        case 'RS384':
-            return 'RS384';
-        case 'RS512':
-            return 'RS512';
-        case 'ES256':
-            return 'ES256';
-        case 'ES384':
-            return 'ES384';
-        case 'ES512':
-            return 'ES512';
-        case 'PS256':
-            return 'PS256';
-        case 'PS384':
-            return 'PS384';
-        case 'PS512':
-            return 'PS512';
-        default:
-            return undefined;
-    }
-}
-
-function validateSharedKeyAlgorithm(alg: string): Algorithm | undefined {
-    switch (alg) {
-        case 'HS256':
-            return 'HS256';
-        case 'HS384':
-            return 'HS384';
-        case 'HS512':
-            return 'HS512';
-        default:
-            return undefined;
+        return {
+            provider: config.provider,
+            issuer: config.issuer,
+            audience: config.audience,
+            keyId: config.key_id,
+            key: config.key
+        };
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`Error loading configuration from ${path}: ${error.message}`);
+        } else {
+            throw new Error(`Error loading configuration from ${path}: ${String(error)}`);
+        }
     }
 }
