@@ -26,6 +26,7 @@ async function initializeReplicator() {
   const { configs, allowAnonymous } = await loadAuthenticationConfigurations(authenticationPath);
   const { handler } = JinagaServer.create({
     pgStore: pgConnection,
+    pgKeystore: pgConnection,
     authorization: ruleSet ? a => ruleSet.authorizationRules : undefined,
     distribution: ruleSet ? d => ruleSet.distributionRules : undefined,
     purgeConditions: ruleSet ? p => ruleSet.purgeConditions : undefined
