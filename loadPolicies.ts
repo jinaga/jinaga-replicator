@@ -19,6 +19,7 @@ export async function loadPolicies(path: string): Promise<RuleSet | undefined> {
 
     if (hasMarkerFile && policyFiles.length === 0) {
         // Leave the replicator wide open
+        console.log(`------- Security policies are disabled!!! -------`);
         return undefined;
     }
 
