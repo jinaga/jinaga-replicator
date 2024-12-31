@@ -125,10 +125,6 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
 export async function loadAuthenticationConfigurations(path: string): Promise<{ configs: AuthenticationConfiguration[], allowAnonymous: boolean }> {
     const { providerFiles, hasAllowAnonymousFile } = await findProviderFiles(path);
 
-    if (providerFiles.length === 0) {
-        return { configs: [], allowAnonymous: true };
-    }
-
     const configs: AuthenticationConfiguration[] = [];
     for (const fileName of providerFiles) {
         const config = await loadConfigurationFromFile(fileName);
