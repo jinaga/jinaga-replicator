@@ -5,8 +5,6 @@ import * as iconv from "iconv-lite";
 import { decode, JwtPayload, verify } from "jsonwebtoken";
 import { join } from "path";
 
-const CLOCK_SKEW = 30; // 30 seconds
-
 interface AuthenticationConfiguration {
     provider: string;
     issuer: string;
