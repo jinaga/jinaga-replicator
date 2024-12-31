@@ -6,7 +6,6 @@ import * as chardet from "chardet";
 import * as iconv from "iconv-lite";
 
 const CLOCK_SKEW = 30; // 30 seconds
-const MARKER_FILE_NAME = "no-authentication-providers";
 
 interface AuthenticationConfiguration {
     provider: string;
@@ -124,15 +123,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
 }
 
 export async function loadAuthenticationConfigurations(path: string): Promise<{ configs: AuthenticationConfiguration[], allowAnonymous: boolean }> {
-    const { providerFiles, hasMarkerFile, hasAllowAnonymousFile } = await findProviderFiles(path);
-
-    if (hasMarkerFile && providerFiles.length > 0) {
-        throw new Error(`Authentication providers are disabled, but there are provider files in ${path}.`);
-    }
-
-    if (!hasMarkerFile && providerFiles.length === 0) {
-        throw new Error(`No authentication providers found in ${path}.`);
-    }
+    const { providerFiles, hasAllowAnonymousFile } = await findProviderFiles(path);
 
     if (providerFiles.length === 0) {
         return { configs: [], allowAnonymous: true };
@@ -147,9 +138,8 @@ export async function loadAuthenticationConfigurations(path: string): Promise<{ 
     return { configs, allowAnonymous: hasAllowAnonymousFile };
 }
 
-async function findProviderFiles(dir: string): Promise<{ providerFiles: string[], hasMarkerFile: boolean, hasAllowAnonymousFile: boolean }> {
+async function findProviderFiles(dir: string): Promise<{ providerFiles: string[], hasAllowAnonymousFile: boolean }> {
     const providerFiles: string[] = [];
-    let hasMarkerFile = false;
     let hasAllowAnonymousFile = false;
 
     const entries = await readdir(dir, { withFileTypes: true });
@@ -159,20 +149,17 @@ async function findProviderFiles(dir: string): Promise<{ providerFiles: string[]
         if (entry.isDirectory()) {
             const result = await findProviderFiles(fullPath);
             providerFiles.push(...result.providerFiles);
-            hasMarkerFile = hasMarkerFile || result.hasMarkerFile;
             hasAllowAnonymousFile = hasAllowAnonymousFile || result.hasAllowAnonymousFile;
         } else if (entry.isFile()) {
             if (entry.name.endsWith('.provider')) {
                 providerFiles.push(fullPath);
-            } else if (entry.name === MARKER_FILE_NAME) {
-                hasMarkerFile = true;
             } else if (entry.name === "allow-anonymous") {
                 hasAllowAnonymousFile = true;
             }
         }
     }
 
-    return { providerFiles, hasMarkerFile, hasAllowAnonymousFile };
+    return { providerFiles, hasAllowAnonymousFile };
 }
 
 async function loadConfigurationFromFile(path: string): Promise<AuthenticationConfiguration> {
