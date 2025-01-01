@@ -3,5 +3,5 @@ FROM jinaga/jinaga-replicator
 # Create an empty no-security-policies file
 RUN mkdir -p /var/lib/replicator/policies && touch /var/lib/replicator/policies/no-security-policies
 
-# Create an empty authentication folder
-RUN mkdir -p /var/lib/replicator/authentication
+# Create an empty allow-anonymous file
+RUN mkdir -p /var/lib/replicator/authentication && touch /var/lib/replicator/authentication/allow-anonymous
