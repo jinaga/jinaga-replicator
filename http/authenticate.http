@@ -1,0 +1,2 @@
+GET {{replicatorUrl}}/login
+Authorization: oauth2 authorization_code

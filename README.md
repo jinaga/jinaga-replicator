@@ -33,6 +33,65 @@ export const j = JinagaBrowser.create({
 
 Learn more at [jinaga.com](https://jinaga.com/documents/replicator/).
 
+## Authentication
+
+The Jinaga Replicator supports authentication using JSON Web Tokens (JWT).
+You can configure authentication providers by placing JSON files in the authentication folder.
+
+### Authentication Folder
+
+To use authentication, mount a directory containing your authentication provider files to the container's `/var/lib/replicator/authentication` directory:
+
+```bash
+docker run -d --name my-replicator -p8080:8080 -v /path/to/your/authentication:/var/lib/replicator/authentication jinaga/jinaga-replicator
+```
+
+Replace `/path/to/your/authentication` with the path to the directory on your host machine that contains your authentication provider files.
+
+### JSON Provider File Specification
+
+Each JSON provider file should have the following structure:
+
+```json
+{
+    "provider": "string",
+    "issuer": "string",
+    "audience": "string",
+    "key_id": "string",
+    "key": "string"
+}
+```
+
+- `provider`: A unique identifier for the authentication provider.
+- `issuer`: The expected issuer (`iss`) claim in the JWT.
+- `audience`: The expected audience (`aud`) claim in the JWT.
+- `key_id`: The key identifier (`kid`) used to select the key for verifying the JWT signature.
+- `key`: The key used to verify the JWT signature. This can be a PEM-encoded public key for asymmetric algorithms, or a shared key for symmetric algorithms.
+
+### Example
+
+Here is an example of an authentication provider file using RSA validation:
+
+```json
+{
+    "provider": "example-rsa",
+    "issuer": "https://example.com",
+    "audience": "my-replicator",
+    "key_id": "WVoKvLhSUl8cJRNGo6pKUUvia8Q",
+	"key": "-----BEGIN PUBLIC KEY-----\nMIIBI...DAQAB\n-----END PUBLIC KEY-----"
+}
+```
+
+### Allow Anonymous Access
+
+To allow anonymous access, create an empty `allow-anonymous` file in the authentication directory.
+
+```bash
+touch /var/lib/replicator/authentication/allow-anonymous
+```
+
+A user will be permitted to access the replicator without a bearer token if the `allow-anonymous` file is present. Authorization and distribution rules will still apply. The user will only be able to write facts with the `any` authorization rule, and can only read feeds shared with `everyone`.
+
 ## Security Policies
 
 Policies determine who is authorized to write facts, and to whom to distribute facts.

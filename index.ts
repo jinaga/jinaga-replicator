@@ -3,6 +3,7 @@ import * as http from "http";
 import { JinagaServer } from "jinaga-server";
 import process = require("process");
 import { loadPolicies } from "./loadPolicies";
+import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 
 process.on('SIGINT', () => {
   console.log("\n\nStopping replicator\n");
@@ -20,15 +21,18 @@ async function initializeReplicator() {
   const pgConnection = process.env.JINAGA_POSTGRESQL ||
     'postgresql://repl:replpw@localhost:5432/replicator';
   const policiesPath = process.env.JINAGA_POLICIES || 'policies';
+  const authenticationPath = process.env.JINAGA_AUTHENTICATION || 'authentication';
   const ruleSet = await loadPolicies(policiesPath);
+  const { configs, allowAnonymous } = await loadAuthenticationConfigurations(authenticationPath);
   const { handler } = JinagaServer.create({
     pgStore: pgConnection,
+    pgKeystore: pgConnection,
     authorization: ruleSet ? a => ruleSet.authorizationRules : undefined,
     distribution: ruleSet ? d => ruleSet.distributionRules : undefined,
     purgeConditions: ruleSet ? p => ruleSet.purgeConditions : undefined
   });
 
-  app.use('/jinaga', handler);
+  app.use('/jinaga', authenticate(configs, allowAnonymous), handler);
 
   server.listen(app.get('port'), () => {
     printLogo();

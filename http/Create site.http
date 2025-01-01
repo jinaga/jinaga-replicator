@@ -1,0 +1,10 @@
+POST {{replicatorUrl}}/write
+Authorization: oauth2 authorization_code
+Content-Type: text/plain
+
+let creator: Jinaga.User = me
+
+let site: Blog.Site = {
+  creator,
+  domain: "qedcode.com"
+}
