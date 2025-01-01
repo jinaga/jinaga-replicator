@@ -1,6 +1,7 @@
 import { context, SpanStatusCode, trace } from '@opentelemetry/api';
+import { Tracer } from "jinaga/dist/util/trace";
 
-export class Trace {
+export class OpenTelemetryTracer implements Tracer {
   private tracer = trace.getTracer('default');
 
   async dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
@@ -24,6 +25,20 @@ export class Trace {
   metric(message: string, measurements: { [key: string]: number }): void {
     const span = this.tracer.startSpan(message, {
       attributes: measurements,
+    });
+    span.end();
+  }
+
+  info(message: string): void {
+    const span = this.tracer.startSpan('info', {
+      attributes: { message },
+    });
+    span.end();
+  }
+
+  warn(message: string): void {
+    const span = this.tracer.startSpan('warn', {
+      attributes: { message },
     });
     span.end();
   }
