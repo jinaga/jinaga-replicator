@@ -82,6 +82,16 @@ Here is an example of an authentication provider file using RSA validation:
 }
 ```
 
+### Allow Anonymous Access
+
+To allow anonymous access, create an empty `allow-anonymous` file in the authentication directory.
+
+```bash
+touch /var/lib/replicator/authentication/allow-anonymous
+```
+
+A user will be permitted to access the replicator without a bearer token if the `allow-anonymous` file is present. Authorization and distribution rules will still apply. The user will only be able to write facts with the `any` authorization rule, and can only read feeds shared with `everyone`.
+
 ## Security Policies
 
 Policies determine who is authorized to write facts, and to whom to distribute facts.
