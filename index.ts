@@ -7,12 +7,20 @@ import { findUpstreamReplicators } from "./findUpstreamReplicators";
 import { loadPolicies } from "./loadPolicies";
 import { ReplicatorConsoleTracer } from "./replicatorConsoleTracer";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
+import { startTracer, shutdownTracer } from "./telemetry/tracer";
 import process = require("process");
 
-import "./telemetry/tracer";
+startTracer();
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log("\n\nStopping replicator\n");
+  await shutdownTracer();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log("\n\nStopping replicator\n");
+  await shutdownTracer();
   process.exit(0);
 });
 

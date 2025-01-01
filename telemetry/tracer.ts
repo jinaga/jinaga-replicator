@@ -15,11 +15,12 @@ const sdk = new NodeSDK({
   instrumentations: [getNodeAutoInstrumentations()],
 });
 
-sdk.start();
+export function startTracer() {
+  sdk.start();
+}
 
-process.on('SIGTERM', () => {
-  sdk.shutdown()
+export function shutdownTracer() {
+  return sdk.shutdown()
     .then(() => console.log('Tracing terminated'))
-    .catch((error) => console.log('Error terminating tracing', error))
-    .finally(() => process.exit(0));
-});
+    .catch((error) => console.log('Error terminating tracing', error));
+}
