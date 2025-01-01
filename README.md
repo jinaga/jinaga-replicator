@@ -57,20 +57,18 @@ Each JSON provider file should have the following structure:
     "provider": "string",
     "issuer": "string",
     "audience": "string",
-    "algorithm": "string",
-    "public_key": "string (optional)",
-    "shared_key": "string (optional)"
+    "key_id": "string",
+    "key": "string"
 }
 ```
 
 - `provider`: A unique identifier for the authentication provider.
 - `issuer`: The expected issuer (`iss`) claim in the JWT.
 - `audience`: The expected audience (`aud`) claim in the JWT.
-- `algorithm`: The algorithm used to sign the JWT. Supported algorithms include `RS256`, `HS256`, etc.
-- `public_key`: The public key used to verify the JWT signature (for asymmetric algorithms).
-- `shared_key`: The shared key used to verify the JWT signature (for symmetric algorithms).
+- `key_id`: The key identifier (`kid`) used to select the key for verifying the JWT signature.
+- `key`: The key used to verify the JWT signature. This can be a PEM-encoded public key for asymmetric algorithms, or a shared key for symmetric algorithms.
 
-### Example: RSA Validation
+### Example
 
 Here is an example of an authentication provider file using RSA validation:
 
@@ -79,22 +77,8 @@ Here is an example of an authentication provider file using RSA validation:
     "provider": "example-rsa",
     "issuer": "https://example.com",
     "audience": "my-replicator",
-    "algorithm": "RS256",
-    "public_key": "-----BEGIN PUBLIC KEY-----\n..."
-}
-```
-
-### Example: Shared-Key Validation
-
-Here is an example of an authentication provider file using shared-key validation:
-
-```json
-{
-    "provider": "example-shared",
-    "issuer": "https://example.com",
-    "audience": "my-replicator",
-    "algorithm": "HS256",
-    "shared_key": "your-shared-key"
+    "key_id": "WVoKvLhSUl8cJRNGo6pKUUvia8Q",
+	"key": "-----BEGIN PUBLIC KEY-----\nMIIBI...DAQAB\n-----END PUBLIC KEY-----"
 }
 ```
 
