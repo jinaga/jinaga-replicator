@@ -9,6 +9,8 @@ import { ReplicatorConsoleTracer } from "./replicatorConsoleTracer";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import process = require("process");
 
+import "./telemetry/tracer";
+
 process.on('SIGINT', () => {
   console.log("\n\nStopping replicator\n");
   process.exit(0);
