@@ -29,6 +29,13 @@ export class OpenTelemetryTracer implements Tracer {
     span.end();
   }
 
+  counter(name: string, value: number): void {
+    const span = this.tracer.startSpan('counter', {
+      attributes: { name, value },
+    });
+    span.end();
+  }
+
   info(message: string): void {
     const span = this.tracer.startSpan('info', {
       attributes: { message },
