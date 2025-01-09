@@ -1,3 +1,5 @@
+import { Trace } from "jinaga";
+
 export function findUpstreamReplicators(): string[] {
   const upstreamReplicators: string[] = [];
   let index = 1;
@@ -13,15 +15,24 @@ export function findUpstreamReplicators(): string[] {
     try {
       const parsedUrl = new URL(url);
       if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-        console.warn(`Invalid URL scheme for ${envVar}: ${url}`);
+        Trace.warn(`Invalid URL scheme for ${envVar}: ${url}`);
       } else {
         upstreamReplicators.push(url);
       }
     } catch (error) {
-      console.warn(`Invalid URL for ${envVar}: ${url}`);
+      Trace.warn(`Invalid URL for ${envVar}: ${url}`);
     }
 
     index++;
+  }
+
+  if (upstreamReplicators.length > 0) {
+    Trace.info('Detected upstream replicators:');
+    upstreamReplicators.forEach((url, i) => {
+      Trace.info(`${i + 1}. ${url}`);
+    });
+  } else {
+    Trace.info('No upstream replicators detected.');
   }
 
   return upstreamReplicators;
