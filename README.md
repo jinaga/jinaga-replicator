@@ -195,6 +195,68 @@ If the file is not present, the replicator will exit with an error message indic
 The image `jinaga/jinaga-replicator-no-security-policies` is a variant of the Jinaga Replicator image that does not run any security policies.
 It includes a `no-security-policies` file in the `/var/lib/replicator/policies` directory.
 
+## Upstream Replicators
+
+The Jinaga Replicator can be configured to connect to upstream replicators using environment variables. Each upstream replicator's base URL is specified using a numbered environment variable.
+
+### Environment Variable Naming Convention
+
+Each environment variable must follow the format:
+`REPLICATOR_UPSTREAM_<N>`
+where `<N>` is a positive integer starting from 1, representing the order of the upstream replicator in the list.
+
+### Value Format
+
+The value of each environment variable must be a valid base URL, using either the `http` or `https` scheme.
+Examples:
+`http://replicator1.example.com`
+`https://replicator2.example.com`
+
+### Example Configuration
+
+To configure a container with two upstream replicators:
+
+```shell
+docker run \
+  -e REPLICATOR_UPSTREAM_1=https://replicator1.example.com \
+  -e REPLICATOR_UPSTREAM_2=https://replicator2.example.com \
+  jinaga/jinaga-replicator
+```
+
+### Behavior
+
+1. The container will scan for all environment variables matching the `REPLICATOR_UPSTREAM_<N>` pattern, starting from `REPLICATOR_UPSTREAM_1`.
+2. It will continue until it encounters a gap in the numbering (e.g., `REPLICATOR_UPSTREAM_1` and `REPLICATOR_UPSTREAM_3` are set, but `REPLICATOR_UPSTREAM_2` is missing). At this point, no further upstreams will be considered.
+3. Any invalid URLs or skipped numbers in the sequence will result in a warning being logged, and those entries will be ignored.
+
+### Validation Rules
+
+- **Base URL validation:** The value must be a syntactically valid base URL with a scheme of `http` or `https`. The absence of a valid scheme will cause the entry to be ignored.
+- **Sequential numbering:** Variables must be sequentially numbered, starting from `REPLICATOR_UPSTREAM_1`. Non-sequential numbering will cause later variables to be ignored.
+
+### Logging and Debugging
+
+On startup, the container will log the list of upstream replicators it has detected.
+Example:
+```plaintext
+Detected upstream replicators:
+1. https://replicator1.example.com
+2. https://replicator2.example.com
+```
+
+### Use Cases
+
+- **Static Configuration:** Specify upstreams directly when running the container:
+  ```shell
+  docker run \
+    -e REPLICATOR_UPSTREAM_1=http://replicator1.local \
+    -e REPLICATOR_UPSTREAM_2=https://replicator2.cloud \
+    jinaga/jinaga-replicator
+  ```
+- **Dynamic Configuration:** Use container orchestration tools like Kubernetes to dynamically inject environment variables for upstream replicators.
+
+This approach provides flexibility for users to define multiple upstreams while maintaining clarity and simplicity in the configuration.
+
 ## Build and Run
 
 Build:

@@ -4,6 +4,7 @@ import { JinagaServer } from "jinaga-server";
 import process = require("process");
 import { loadPolicies } from "./loadPolicies";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
+import { findUpstreamReplicators } from "./findUpstreamReplicators";
 
 process.on('SIGINT', () => {
   console.log("\n\nStopping replicator\n");
@@ -33,6 +34,17 @@ async function initializeReplicator() {
   });
 
   app.use('/jinaga', authenticate(configs, allowAnonymous), handler);
+
+  const upstreamReplicators = findUpstreamReplicators();
+
+  if (upstreamReplicators.length > 0) {
+    console.log('Detected upstream replicators:');
+    upstreamReplicators.forEach((url, i) => {
+      console.log(`${i + 1}. ${url}`);
+    });
+  } else {
+    console.log('No upstream replicators detected.');
+  }
 
   server.listen(app.get('port'), () => {
     printLogo();
