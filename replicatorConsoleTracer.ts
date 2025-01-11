@@ -1,6 +1,9 @@
 import { Tracer } from "jinaga";
 
 export class ReplicatorConsoleTracer implements Tracer {
+    private counterAccumulation: { [key: string]: number } = {};
+    private counterTimeout: NodeJS.Timeout | null = null;
+
     info(message: string): void {
         // Do not output INFO messages to the console.
     }
@@ -34,6 +37,17 @@ export class ReplicatorConsoleTracer implements Tracer {
     }
 
     counter(name: string, value: number): void {
-        console.info(`COUNTER: ${name} incremented by ${value}`);
+        if (this.counterTimeout) {
+            this.counterAccumulation[name] = (this.counterAccumulation[name] || 0) + value;
+        } else {
+            this.counterAccumulation[name] = value;
+            this.counterTimeout = setTimeout(() => {
+                for (const [counterName, counterValue] of Object.entries(this.counterAccumulation)) {
+                    console.info(`COUNTER: ${counterName} incremented by ${counterValue}`);
+                }
+                this.counterAccumulation = {};
+                this.counterTimeout = null;
+            }, 1000);
+        }
     }
 }
