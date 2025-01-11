@@ -1,5 +1,5 @@
 node_modules/
 dist/
-http/.env.local
+http/.env.*
 policies/
 authentication/
