@@ -1,14 +1,19 @@
 import express = require("express");
 import * as http from "http";
+import { Trace } from "jinaga";
 import { JinagaServer } from "jinaga-server";
-import process = require("process");
-import { loadPolicies } from "./loadPolicies";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
+import { findUpstreamReplicators } from "./findUpstreamReplicators";
+import { loadPolicies } from "./loadPolicies";
+import { ReplicatorConsoleTracer } from "./replicatorConsoleTracer";
+import process = require("process");
 
 process.on('SIGINT', () => {
   console.log("\n\nStopping replicator\n");
   process.exit(0);
 });
+
+Trace.configure(new ReplicatorConsoleTracer());
 
 const app = express();
 const server = http.createServer(app);
@@ -24,9 +29,13 @@ async function initializeReplicator() {
   const authenticationPath = process.env.JINAGA_AUTHENTICATION || 'authentication';
   const ruleSet = await loadPolicies(policiesPath);
   const { configs, allowAnonymous } = await loadAuthenticationConfigurations(authenticationPath);
+
+  const upstreamReplicators = findUpstreamReplicators();
+
   const { handler } = JinagaServer.create({
     pgStore: pgConnection,
     pgKeystore: pgConnection,
+    upstreamReplicators: upstreamReplicators,
     authorization: ruleSet ? a => ruleSet.authorizationRules : undefined,
     distribution: ruleSet ? d => ruleSet.distributionRules : undefined,
     purgeConditions: ruleSet ? p => ruleSet.purgeConditions : undefined
