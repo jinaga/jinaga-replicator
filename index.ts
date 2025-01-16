@@ -6,6 +6,7 @@ import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
 import { loadPolicies } from "./loadPolicies";
 import { ReplicatorConsoleTracer } from "./replicatorConsoleTracer";
+import { loadSubscriptions } from "./subscriptions";
 import process = require("process");
 
 process.on('SIGINT', () => {
@@ -27,8 +28,10 @@ async function initializeReplicator() {
     'postgresql://repl:replpw@localhost:5432/replicator';
   const policiesPath = process.env.JINAGA_POLICIES || 'policies';
   const authenticationPath = process.env.JINAGA_AUTHENTICATION || 'authentication';
+  const subscriptionPath = process.env.JINAGA_SUBSCRIPTIONS || 'subscriptions';
   const ruleSet = await loadPolicies(policiesPath);
   const { configs, allowAnonymous } = await loadAuthenticationConfigurations(authenticationPath);
+  const subscriptions = await loadSubscriptions(subscriptionPath);
 
   const upstreamReplicators = findUpstreamReplicators();
 
