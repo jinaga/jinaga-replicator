@@ -1,11 +1,11 @@
 import * as chardet from "chardet";
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
-import { Declaration, Specification, SpecificationParser } from "jinaga";
+import { Declaration, FactManager, FactReference, Jinaga, Specification, SpecificationParser, Trace } from "jinaga";
 import { join } from "path";
 
 export interface Subscription {
-    declaration: Declaration;
+    start: FactReference[];
     specification: Specification;
 }
 
@@ -13,6 +13,19 @@ export async function loadSubscriptions(path: string): Promise<Subscription[]> {
     const subscriptionFiles = await findSubscriptionFiles(path);
     const subscriptionArrays = await Promise.all(subscriptionFiles.map(loadSubscription));
     return subscriptionArrays.flat();
+}
+
+export function runSubscriptions(subscriptions: Subscription[], factManager: FactManager) {
+    for (const subscription of subscriptions) {
+        runSubscription(subscription, factManager);
+    }
+}
+
+function runSubscription(subscription: Subscription, factManager: FactManager) {
+    const observer = factManager.startObserver(subscription.start, subscription.specification, _ => { }, true);
+    observer.loaded().catch(error => {
+        Trace.error(`Error running subscription: ${error}`);
+    });
 }
 
 async function findSubscriptionFiles(dir: string): Promise<string[]> {
@@ -65,8 +78,15 @@ function parseSubscriptions(content: string) {
         while (!parser.continues('}')) {
             declaration = parser.parseDeclaration(declaration);
             const specification = parser.parseSpecification();
+            const start = specification.given.map(g => {
+                const givenDeclaration = declaration.find(d => d.name === g.name);
+                if (!givenDeclaration) {
+                    throw new Error(`Declaration not found for ${g.name}`);
+                }
+                return givenDeclaration.declared.reference;
+            });
             subscriptions.push({
-                declaration,
+                start,
                 specification
             });
         }
