@@ -1,4 +1,5 @@
 import * as chardet from "chardet";
+import { Dirent } from "fs";
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
 import { Declaration, FactManager, FactReference, Jinaga, Specification, SpecificationParser, Trace } from "jinaga";
@@ -31,7 +32,14 @@ function runSubscription(subscription: Subscription, factManager: FactManager) {
 async function findSubscriptionFiles(dir: string): Promise<string[]> {
     const subscriptionFiles: string[] = [];
 
-    const entries = await readdir(dir, { withFileTypes: true });
+    let entries: Dirent[] = [];
+    try {
+        entries = await readdir(dir, { withFileTypes: true });
+    }
+    catch (error) {
+        // The directory does not exist.
+        return subscriptionFiles;
+    }
 
     for (const entry of entries) {
         const fullPath = join(dir, entry.name);
