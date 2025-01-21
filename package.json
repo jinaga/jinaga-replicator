@@ -7,7 +7,7 @@
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node dist",
-    "dev": "JINAGA_POLICIES=./devenv/policies JINAGA_AUTHENTICATION=./devenv/authentication JINAGA_POSTGRESQL=postgresql://appuser:apppw@localhost:5432/appdb nodemon -e ts --exec 'tsc && node dist'"
+    "dev": "REPLICATOR_UPSTREAM_1=http://localhost:8081/jinaga JINAGA_POLICIES=./devenv/policies JINAGA_AUTHENTICATION=./devenv/authentication JINAGA_SUBSCRIPTIONS=./devenv/subscriptions JINAGA_POSTGRESQL=postgresql://appuser:apppw@localhost:5432/appdb nodemon -e ts --exec 'tsc && node dist'"
   },
   "keywords": [
     "Jinaga",
@@ -19,7 +19,7 @@
     "chardet": "^2.0.0",
     "express": "^4.21.2",
     "jinaga": "^6.5.7",
-    "jinaga-server": "^3.3.3",
+    "jinaga-server": "^3.3.5",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.1"
   },

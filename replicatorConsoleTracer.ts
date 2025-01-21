@@ -29,7 +29,8 @@ export class ReplicatorConsoleTracer implements Tracer {
 
     metric(message: string, measurements: { [key: string]: number; }): void {
         if (message === "Postgres connected" ||
-            message === "Postgres acquired"
+            message === "Postgres acquired" ||
+            message === "Postgres disconnected"
         ) {
             return;
         }
