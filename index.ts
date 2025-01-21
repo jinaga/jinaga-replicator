@@ -6,7 +6,7 @@ import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
 import { loadPolicies } from "./loadPolicies";
 import { ReplicatorConsoleTracer } from "./replicatorConsoleTracer";
-import { loadSubscriptions } from "./subscriptions";
+import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import process = require("process");
 
 process.on('SIGINT', () => {
@@ -35,7 +35,7 @@ async function initializeReplicator() {
 
   const upstreamReplicators = findUpstreamReplicators();
 
-  const { handler } = JinagaServer.create({
+  const { handler, factManager } = JinagaServer.create({
     pgStore: pgConnection,
     pgKeystore: pgConnection,
     upstreamReplicators: upstreamReplicators,
@@ -47,6 +47,7 @@ async function initializeReplicator() {
   app.use('/jinaga', authenticate(configs, allowAnonymous), handler);
 
   server.listen(app.get('port'), () => {
+    runSubscriptions(subscriptions, factManager);
     printLogo();
     console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
     console.log('  Press CTRL-C to stop\n');
