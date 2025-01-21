@@ -9,7 +9,7 @@ COPY *.ts .
 RUN npm ci
 RUN npm run build
 
-FROM jinaga/jinaga-postgres-fact-keystore:5.2.0
+FROM jinaga/jinaga-postgres-fact-keystore:5.3.0
 
 WORKDIR /replicator
 

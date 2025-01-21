@@ -2,7 +2,7 @@ import * as chardet from "chardet";
 import { Dirent } from "fs";
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
-import { Declaration, FactManager, FactReference, Jinaga, Specification, SpecificationParser, Trace } from "jinaga";
+import { Declaration, FactManager, FactReference, Specification, SpecificationParser, Trace } from "jinaga";
 import { join } from "path";
 
 export interface Subscription {
