@@ -2,6 +2,7 @@ import * as chardet from "chardet";
 import { NextFunction, Request, Response } from "express";
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
+import { Trace } from "jinaga";
 import { decode, JwtPayload, verify } from "jsonwebtoken";
 import { join } from "path";
 
@@ -96,6 +97,10 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
 export async function loadAuthenticationConfigurations(path: string): Promise<{ configs: AuthenticationConfiguration[], allowAnonymous: boolean }> {
     const { providerFiles, hasAllowAnonymousFile } = await findProviderFiles(path);
 
+    if (!hasAllowAnonymousFile && providerFiles.length === 0) {
+        throw new Error(`No authentication configurations found in ${path}.`);
+    }
+
     const configs: AuthenticationConfiguration[] = [];
     for (const fileName of providerFiles) {
         const config = await loadConfigurationFromFile(fileName);
@@ -103,7 +108,7 @@ export async function loadAuthenticationConfigurations(path: string): Promise<{ 
     }
 
     if (hasAllowAnonymousFile) {
-        console.log(`--------- Anonymous access is allowed!!! --------`);
+        Trace.warn(`--------- Anonymous access is allowed!!! --------`);
     }
 
     return { configs, allowAnonymous: hasAllowAnonymousFile };
@@ -135,6 +140,8 @@ async function findProviderFiles(dir: string): Promise<{ providerFiles: string[]
 
 async function loadConfigurationFromFile(path: string): Promise<AuthenticationConfiguration> {
     try {
+        Trace.info(`Searching for authentication files in ${path}`);
+
         const buffer = await readFile(path);
         const encoding = chardet.detect(buffer) || 'utf-8';
         const content = iconv.decode(buffer, encoding);

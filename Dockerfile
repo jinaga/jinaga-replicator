@@ -44,4 +44,9 @@ VOLUME /var/lib/replicator/authentication
 
 ENV JINAGA_AUTHENTICATION=/var/lib/replicator/authentication
 
+RUN mkdir -p /var/lib/replicator/subscriptions
+VOLUME /var/lib/replicator/subscriptions
+
+ENV JINAGA_SUBSCRIPTIONS=/var/lib/replicator/subscriptions
+
 ENTRYPOINT [ "start.sh" ]

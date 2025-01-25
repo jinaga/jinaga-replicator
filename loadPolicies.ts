@@ -1,12 +1,14 @@
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
 import * as chardet from "chardet";
-import { RuleSet } from "jinaga";
+import { RuleSet, Trace } from "jinaga";
 import { join } from "path";
 
 const MARKER_FILE_NAME = "no-security-policies";
 
 export async function loadPolicies(path: string): Promise<RuleSet | undefined> {
+    Trace.info(`Searching for security policies in ${path}`);
+
     const { policyFiles, hasMarkerFile } = await findPolicyFiles(path);
 
     if (hasMarkerFile && policyFiles.length > 0) {
@@ -19,7 +21,7 @@ export async function loadPolicies(path: string): Promise<RuleSet | undefined> {
 
     if (hasMarkerFile && policyFiles.length === 0) {
         // Leave the replicator wide open
-        console.log(`------- Security policies are disabled!!! -------`);
+        Trace.warn(`------- Security policies are disabled!!! -------`);
         return undefined;
     }
 
@@ -58,9 +60,20 @@ async function findPolicyFiles(dir: string): Promise<{ policyFiles: string[], ha
 }
 
 async function loadRuleSetFromFile(path: string): Promise<RuleSet> {
-    const buffer = await readFile(path);
-    const encoding = chardet.detect(buffer) || 'utf-8';
-    const description = iconv.decode(buffer, encoding);
-    const ruleSet = RuleSet.loadFromDescription(description);
-    return ruleSet;
+    try {
+        Trace.info(`Loading rule set from ${path}`);
+
+        const buffer = await readFile(path);
+        const encoding = chardet.detect(buffer) || 'utf-8';
+        const description = iconv.decode(buffer, encoding);
+        const ruleSet = RuleSet.loadFromDescription(description);
+        return ruleSet;
+    }
+    catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`Error loading rule set from ${path}: ${error.message}`);
+        } else {
+            throw new Error(`Error loading rule set from ${path}: ${String(error)}`);
+        }
+    }
 }
