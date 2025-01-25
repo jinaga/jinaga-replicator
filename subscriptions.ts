@@ -30,6 +30,8 @@ function runSubscription(subscription: Subscription, factManager: FactManager) {
 }
 
 async function findSubscriptionFiles(dir: string): Promise<string[]> {
+    Trace.info(`Searching for subscription files in ${dir}`);
+
     const subscriptionFiles: string[] = [];
 
     let entries: Dirent[] = [];
@@ -58,6 +60,8 @@ async function findSubscriptionFiles(dir: string): Promise<string[]> {
 
 async function loadSubscription(path: string): Promise<Subscription[]> {
     try {
+        Trace.info(`Loading subscriptions from ${path}`);
+
         const buffer = await readFile(path);
         const encoding = chardet.detect(buffer) || 'utf-8';
         const content = iconv.decode(buffer, encoding);

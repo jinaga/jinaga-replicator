@@ -2,6 +2,7 @@ import * as chardet from "chardet";
 import { NextFunction, Request, Response } from "express";
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
+import { Trace } from "jinaga";
 import { decode, JwtPayload, verify } from "jsonwebtoken";
 import { join } from "path";
 
@@ -135,6 +136,8 @@ async function findProviderFiles(dir: string): Promise<{ providerFiles: string[]
 
 async function loadConfigurationFromFile(path: string): Promise<AuthenticationConfiguration> {
     try {
+        Trace.info(`Searching for authentication files in ${path}`);
+
         const buffer = await readFile(path);
         const encoding = chardet.detect(buffer) || 'utf-8';
         const content = iconv.decode(buffer, encoding);
