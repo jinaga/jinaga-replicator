@@ -195,6 +195,105 @@ If the file is not present, the replicator will exit with an error message indic
 The image `jinaga/jinaga-replicator-no-security-policies` is a variant of the Jinaga Replicator image that does not run any security policies.
 It includes a `no-security-policies` file in the `/var/lib/replicator/policies` directory.
 
+## Subscription Files
+
+Subscription files define the facts that a client is interested in receiving updates for. These files are used to configure the replicator to push updates to connected clients.
+
+### Subscription File Structure
+
+Each subscription file should have the following structure:
+
+```
+subscription {
+    let variable: Fact.Type = {
+        // Initial fact details
+    }
+
+    (variable: Fact.Type) {
+        // Specification details
+    }
+}
+```
+
+### Example
+
+Here is an example of a subscription file:
+
+```
+subscription {
+    let creator: Jinaga.User = {
+        publicKey: "--- FAKE PUBLIC KEY ---"
+    }
+
+    (creator: Jinaga.User) {
+        site: Blog.Site [
+            site->creator: Jinaga.User = creator
+        ]
+    }
+}
+```
+
+### Mounting Subscription Files
+
+To run a replicator with subscription files, mount a directory containing your subscription files to the container's `/var/lib/replicator/subscriptions` directory:
+
+```bash
+docker run -d --name my-replicator -p8080:8080 -v /path/to/your/subscriptions:/var/lib/replicator/subscriptions jinaga/jinaga-replicator
+```
+
+Replace `/path/to/your/subscriptions` with the path to the directory on your host machine that contains your subscription files.
+
+### Using as a Base Image
+
+To use this image as a base image and copy your subscription files into the `/var/lib/replicator/subscriptions` directory, create a `Dockerfile` like this:
+
+```dockerfile
+FROM jinaga/jinaga-replicator
+
+# Copy subscription files into the /var/lib/replicator/subscriptions directory
+COPY *.subscription /var/lib/replicator/subscriptions/
+
+# Ensure the subscription files have the correct permissions
+RUN chmod -R 755 /var/lib/replicator/subscriptions
+```
+
+Build the new Docker image:
+
+```bash
+docker build -t my-replicator-with-subscriptions .
+```
+
+This will create a new Docker image named `my-replicator-with-subscriptions` with the subscription files included.
+
+## Configuration
+
+The Jinaga Replicator can be configured using environment variables. Below are the available configuration options:
+
+### Environment Variables
+
+- `REPLICATOR_PORT`: The port on which the replicator will listen. Default is `8080`.
+- `REPLICATOR_LOG_LEVEL`: The log level for the replicator. Options are `debug`, `info`, `warn`, `error`. Default is `info`.
+- `REPLICATOR_DATA_PATH`: The path to the directory where the replicator will store its data. Default is `/var/lib/replicator/data`.
+- `REPLICATOR_AUTH_PATH`: The path to the directory where the replicator will look for authentication provider files. Default is `/var/lib/replicator/authentication`.
+- `REPLICATOR_POLICY_PATH`: The path to the directory where the replicator will look for policy files. Default is `/var/lib/replicator/policies`.
+
+### Example Configuration
+
+To run a replicator with custom configuration:
+
+```bash
+docker run -d --name my-replicator \
+  -p 9090:9090 \
+  -e REPLICATOR_PORT=9090 \
+  -e REPLICATOR_LOG_LEVEL=debug \
+  -e REPLICATOR_DATA_PATH=/custom/data/path \
+  -e REPLICATOR_AUTH_PATH=/custom/auth/path \
+  -e REPLICATOR_POLICY_PATH=/custom/policy/path \
+  jinaga/jinaga-replicator
+```
+
+This will start a replicator on port 9090 with debug logging, storing data, authentication, and policy files in custom paths.
+
 ## Upstream Replicators
 
 The Jinaga Replicator can be configured to connect to upstream replicators using environment variables. Each upstream replicator's base URL is specified using a numbered environment variable.
