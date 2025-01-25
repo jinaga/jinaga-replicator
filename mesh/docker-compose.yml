@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   front-end-replicator:
-    image: jinaga/jinaga-replicator-no-security-policies
+    image: jinaga/jinaga-replicator:latest
     container_name: front-end-replicator
     ports:
       - "8080:8080"
@@ -14,7 +14,7 @@ services:
       - ../devenv/subscriptions:/var/lib/replicator/subscriptions:ro
 
   back-end-replicator:
-    image: jinaga/jinaga-replicator-no-security-policies
+    image: jinaga/jinaga-replicator:latest
     container_name: back-end-replicator
     ports:
       - "8081:8080"
