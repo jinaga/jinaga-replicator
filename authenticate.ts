@@ -104,7 +104,7 @@ export async function loadAuthenticationConfigurations(path: string): Promise<{ 
     }
 
     if (hasAllowAnonymousFile) {
-        console.log(`--------- Anonymous access is allowed!!! --------`);
+        Trace.warn(`--------- Anonymous access is allowed!!! --------`);
     }
 
     return { configs, allowAnonymous: hasAllowAnonymousFile };
