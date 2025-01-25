@@ -8,6 +8,10 @@ services:
       - "8080:8080"
     networks:
       - replicator-network
+    volumes:
+      - ../devenv/policies:/var/lib/replicator/policies:ro
+      - ../devenv/authentication:/var/lib/replicator/authentication:ro
+      - ../devenv/subscriptions:/var/lib/replicator/subscriptions:ro
 
   back-end-replicator:
     image: jinaga/jinaga-replicator-no-security-policies
@@ -18,6 +22,10 @@ services:
       - REPLICATOR_UPSTREAM_1=http://front-end-replicator:8080/jinaga
     networks:
       - replicator-network
+    volumes:
+      - ../devenv/policies:/var/lib/replicator/policies:ro
+      - ../devenv/authentication:/var/lib/replicator/authentication:ro
+      - ../devenv/subscriptions:/var/lib/replicator/subscriptions:ro
 
 networks:
   replicator-network:
