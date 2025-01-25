@@ -40,13 +40,13 @@ You can configure authentication providers by placing JSON files in the authenti
 
 ### Authentication Folder
 
-To use authentication, mount a directory containing your authentication provider files to the container's `/var/lib/replicator/authentication` directory:
+To use authentication, mount a directory containing your authentication provider files to the container's `/var/lib/replicator/authentication` directory as read-only:
 
 ```bash
-docker run -d --name my-replicator -p8080:8080 -v /path/to/your/authentication:/var/lib/replicator/authentication jinaga/jinaga-replicator
+docker run -d --name my-replicator -p8080:8080 -v /path/to/your/authentication:/var/lib/replicator/authentication:ro jinaga/jinaga-replicator
 ```
 
-Replace `/path/to/your/authentication` with the path to the directory on your host machine that contains your authentication provider files.
+Replace `/path/to/your/authentication` with the path to the directory on your host machine that contains your authentication provider files with a `.provider` extension.
 
 ### JSON Provider File Specification
 
@@ -151,35 +151,13 @@ You can produce a policy file from .NET using the `dotnet jinaga` command line t
 
 ### Mounting Policy Files
 
-To run a replicator with security policies, mount a directory containing your policy files to the container's `/var/lib/replicator/policies` directory:
+To run a replicator with security policies, mount a directory containing your policy files to the container's `/var/lib/replicator/policies` directory as read-only:
 
 ```bash
-docker run -d --name my-replicator -p8080:8080 -v /path/to/your/policies:/var/lib/replicator/policies jinaga/jinaga-replicator
+docker run -d --name my-replicator -p8080:8080 -v /path/to/your/policies:/var/lib/replicator/policies:ro jinaga/jinaga-replicator
 ```
 
 Replace `/path/to/your/policies` with the path to the directory on your host machine that contains your policy files.
-
-### Using as a Base Image
-
-To use this image as a base image and copy your policy files into the `/var/lib/replicator/policies` directory, create a `Dockerfile` like this:
-
-```dockerfile
-FROM jinaga/jinaga-replicator
-
-# Copy policy files into the /var/lib/replicator/policies directory
-COPY *.policy /var/lib/replicator/policies/
-
-# Ensure the policy files have the correct permissions
-RUN chmod -R 755 /var/lib/replicator/policies
-```
-
-Build the new Docker image:
-
-```bash
-docker build -t my-replicator-with-policies .
-```
-
-This will create a new Docker image named `my-replicator-with-policies` with the policy files included.
 
 ### No Security Policies
 
@@ -195,9 +173,37 @@ If the file is not present, the replicator will exit with an error message indic
 The image `jinaga/jinaga-replicator-no-security-policies` is a variant of the Jinaga Replicator image that does not run any security policies.
 It includes a `no-security-policies` file in the `/var/lib/replicator/policies` directory.
 
+## Upstream Replicators
+
+The Jinaga Replicator can be configured to connect to upstream replicators using environment variables. Each upstream replicator's base URL is specified using a numbered environment variable.
+
+### Environment Variable Naming Convention
+
+Each environment variable must follow the format:
+`REPLICATOR_UPSTREAM_<N>`
+where `<N>` is a positive integer starting from 1, representing the order of the upstream replicator in the list.
+
+### Value Format
+
+The value of each environment variable must be a valid base URL, using either the `http` or `https` scheme.
+Examples:
+`http://replicator1.example.com`
+`https://replicator2.example.com`
+
+### Example Configuration
+
+To configure a container with two upstream replicators:
+
+```shell
+docker run \
+  -e REPLICATOR_UPSTREAM_1=https://replicator1.example.com \
+  -e REPLICATOR_UPSTREAM_2=https://replicator2.example.com \
+  jinaga/jinaga-replicator
+```
+
 ## Subscription Files
 
-Subscription files define the facts that a client is interested in receiving updates for. These files are used to configure the replicator to push updates to connected clients.
+Subscription files define the facts that a client is interested in receiving updates for. These files are used to configure the replicator to subscribe for updates from upstream replicators.
 
 ### Subscription File Structure
 
@@ -235,35 +241,13 @@ subscription {
 
 ### Mounting Subscription Files
 
-To run a replicator with subscription files, mount a directory containing your subscription files to the container's `/var/lib/replicator/subscriptions` directory:
+To run a replicator with subscription files, mount a directory containing your subscription files to the container's `/var/lib/replicator/subscriptions` directory as read-only:
 
 ```bash
-docker run -d --name my-replicator -p8080:8080 -v /path/to/your/subscriptions:/var/lib/replicator/subscriptions jinaga/jinaga-replicator
+docker run -d --name my-replicator -p8080:8080 -v /path/to/your/subscriptions:/var/lib/replicator/subscriptions:ro jinaga/jinaga-replicator
 ```
 
 Replace `/path/to/your/subscriptions` with the path to the directory on your host machine that contains your subscription files.
-
-### Using as a Base Image
-
-To use this image as a base image and copy your subscription files into the `/var/lib/replicator/subscriptions` directory, create a `Dockerfile` like this:
-
-```dockerfile
-FROM jinaga/jinaga-replicator
-
-# Copy subscription files into the /var/lib/replicator/subscriptions directory
-COPY *.subscription /var/lib/replicator/subscriptions/
-
-# Ensure the subscription files have the correct permissions
-RUN chmod -R 755 /var/lib/replicator/subscriptions
-```
-
-Build the new Docker image:
-
-```bash
-docker build -t my-replicator-with-subscriptions .
-```
-
-This will create a new Docker image named `my-replicator-with-subscriptions` with the subscription files included.
 
 ## Configuration
 
@@ -271,11 +255,11 @@ The Jinaga Replicator can be configured using environment variables. Below are t
 
 ### Environment Variables
 
-- `REPLICATOR_PORT`: The port on which the replicator will listen. Default is `8080`.
-- `REPLICATOR_LOG_LEVEL`: The log level for the replicator. Options are `debug`, `info`, `warn`, `error`. Default is `info`.
-- `REPLICATOR_DATA_PATH`: The path to the directory where the replicator will store its data. Default is `/var/lib/replicator/data`.
-- `REPLICATOR_AUTH_PATH`: The path to the directory where the replicator will look for authentication provider files. Default is `/var/lib/replicator/authentication`.
-- `REPLICATOR_POLICY_PATH`: The path to the directory where the replicator will look for policy files. Default is `/var/lib/replicator/policies`.
+- `PORT`: The port on which the replicator will listen. Default is `8080`.
+- `JINAGA_POSTGRESQL`: The PostgreSQL connection string. Default is `postgresql://repl:replpw@localhost:5432/replicator`.
+- `JINAGA_POLICIES`: The path to the directory where the replicator will look for policy files. Default is `policies`.
+- `JINAGA_AUTHENTICATION`: The path to the directory where the replicator will look for authentication provider files. Default is `authentication`.
+- `JINAGA_SUBSCRIPTIONS`: The path to the directory where the replicator will look for subscription files. Default is `subscriptions`.
 
 ### Example Configuration
 
@@ -284,77 +268,47 @@ To run a replicator with custom configuration:
 ```bash
 docker run -d --name my-replicator \
   -p 9090:9090 \
-  -e REPLICATOR_PORT=9090 \
-  -e REPLICATOR_LOG_LEVEL=debug \
-  -e REPLICATOR_DATA_PATH=/custom/data/path \
-  -e REPLICATOR_AUTH_PATH=/custom/auth/path \
-  -e REPLICATOR_POLICY_PATH=/custom/policy/path \
+  -e PORT=9090 \
+  -e JINAGA_POSTGRESQL=postgresql://custom:custompw@localhost:5432/customdb \
+  -e JINAGA_POLICIES=/custom/policies/path \
+  -e JINAGA_AUTHENTICATION=/custom/auth/path \
+  -e JINAGA_SUBSCRIPTIONS=/custom/subscriptions/path \
   jinaga/jinaga-replicator
 ```
 
-This will start a replicator on port 9090 with debug logging, storing data, authentication, and policy files in custom paths.
+This will start a replicator on port 9090 with custom PostgreSQL connection string, and custom paths for policies, authentication, and subscription files.
 
-## Upstream Replicators
+## Using as a Base Image
 
-The Jinaga Replicator can be configured to connect to upstream replicators using environment variables. Each upstream replicator's base URL is specified using a numbered environment variable.
+To use this image as a base image and copy your policy, subscription, and authentication files into the respective directories, create a `Dockerfile` like this:
 
-### Environment Variable Naming Convention
+```dockerfile
+FROM jinaga/jinaga-replicator
 
-Each environment variable must follow the format:
-`REPLICATOR_UPSTREAM_<N>`
-where `<N>` is a positive integer starting from 1, representing the order of the upstream replicator in the list.
+# Copy policy files into the /var/lib/replicator/policies directory
+COPY *.policy /var/lib/replicator/policies/
 
-### Value Format
+# Copy subscription files into the /var/lib/replicator/subscriptions directory
+COPY *.subscription /var/lib/replicator/subscriptions/
 
-The value of each environment variable must be a valid base URL, using either the `http` or `https` scheme.
-Examples:
-`http://replicator1.example.com`
-`https://replicator2.example.com`
+# Copy authentication files into the /var/lib/replicator/authentication directory
+COPY *.provider /var/lib/replicator/authentication/
 
-### Example Configuration
-
-To configure a container with two upstream replicators:
-
-```shell
-docker run \
-  -e REPLICATOR_UPSTREAM_1=https://replicator1.example.com \
-  -e REPLICATOR_UPSTREAM_2=https://replicator2.example.com \
-  jinaga/jinaga-replicator
+# Ensure the files have the correct permissions
+RUN chmod -R 755 /var/lib/replicator/policies /var/lib/replicator/subscriptions /var/lib/replicator/authentication
 ```
 
-### Behavior
+Build the new Docker image:
 
-1. The container will scan for all environment variables matching the `REPLICATOR_UPSTREAM_<N>` pattern, starting from `REPLICATOR_UPSTREAM_1`.
-2. It will continue until it encounters a gap in the numbering (e.g., `REPLICATOR_UPSTREAM_1` and `REPLICATOR_UPSTREAM_3` are set, but `REPLICATOR_UPSTREAM_2` is missing). At this point, no further upstreams will be considered.
-3. Any invalid URLs or skipped numbers in the sequence will result in a warning being logged, and those entries will be ignored.
-
-### Validation Rules
-
-- **Base URL validation:** The value must be a syntactically valid base URL with a scheme of `http` or `https`. The absence of a valid scheme will cause the entry to be ignored.
-- **Sequential numbering:** Variables must be sequentially numbered, starting from `REPLICATOR_UPSTREAM_1`. Non-sequential numbering will cause later variables to be ignored.
-
-### Logging and Debugging
-
-On startup, the container will log the list of upstream replicators it has detected.
-Example:
-```plaintext
-Detected upstream replicators:
-1. https://replicator1.example.com
-2. https://replicator2.example.com
+```bash
+docker build -t my-replicator-with-config .
 ```
 
-### Use Cases
+This will create a new Docker image named `my-replicator-with-config` with the policy, subscription, and authentication files included.
 
-- **Static Configuration:** Specify upstreams directly when running the container:
-  ```shell
-  docker run \
-    -e REPLICATOR_UPSTREAM_1=http://replicator1.local \
-    -e REPLICATOR_UPSTREAM_2=https://replicator2.cloud \
-    jinaga/jinaga-replicator
-  ```
-- **Dynamic Configuration:** Use container orchestration tools like Kubernetes to dynamically inject environment variables for upstream replicators.
+You may choose to embed some configuration files into the image, and mount others from a host folder. For example, it may be useful to build an image containing the policy and subscription files, while mounting the authentication folder so that keys can be easily rotated.
 
-This approach provides flexibility for users to define multiple upstreams while maintaining clarity and simplicity in the configuration.
+To embed some files while mounting others of the same type, mount a child folder. For example, you may wish to embed some common policy files into your image, and then mount a host volume for custom policies. Mount the custom policy folder as a child of the parent that contains the common files.
 
 ## Build and Run
 
