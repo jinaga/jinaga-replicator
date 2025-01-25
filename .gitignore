@@ -1,5 +1,5 @@
 node_modules/
 dist/
 http/.env.*
-policies/
-authentication/
+authentication/fusionauth.provider
+policies/blog.policy
