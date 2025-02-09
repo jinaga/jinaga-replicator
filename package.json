@@ -19,7 +19,7 @@
     "chardet": "^2.0.0",
     "express": "^4.21.2",
     "jinaga": "^6.5.7",
-    "jinaga-server": "^3.3.5",
+    "jinaga-server": "^3.3.6",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.1"
   },
