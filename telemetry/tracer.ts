@@ -5,24 +5,32 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { Trace } from "jinaga";
 import { OpenTelemetryTracer } from "./trace";
 
-// For troubleshooting, set the log level to DiagLogLevel.DEBUG
-diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.INFO);
+let sdk: NodeSDK | undefined;
 
-const traceExporter = new OTLPTraceExporter({
-  url: 'http://localhost:4318/v1/traces', // Adjust the URL to your OTLP endpoint
-});
+export function startTracer(otelExporterOtlpEndpoint: string | undefined) {
+  if (!otelExporterOtlpEndpoint) {
+    console.log('No OTLP endpoint provided. Tracing will not be enabled.');
+    return;
+  }
+  diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
 
-const sdk = new NodeSDK({
-  traceExporter,
-  instrumentations: [getNodeAutoInstrumentations()],
-});
+  const traceExporter = new OTLPTraceExporter({
+    url: otelExporterOtlpEndpoint,
+  });
+  sdk = new NodeSDK({
+    traceExporter,
+    instrumentations: [getNodeAutoInstrumentations()],
+  });
 
-export function startTracer() {
   sdk.start();
   Trace.configure(new OpenTelemetryTracer());
+  console.log('Tracing started');
 }
 
 export function shutdownTracer() {
+  if (!sdk) {
+    return Promise.resolve();
+  }
   return sdk.shutdown()
     .then(() => console.log('Tracing terminated'))
     .catch((error) => console.log('Error terminating tracing', error));

@@ -10,7 +10,7 @@ import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import { startTracer, shutdownTracer } from "./telemetry/tracer";
 import process = require("process");
 
-startTracer();
+startTracer(process.env.OTEL_EXPORTER_OTLP_ENDPOINT);
 
 process.on('SIGINT', async () => {
   console.log("\n\nStopping replicator\n");
