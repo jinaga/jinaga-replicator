@@ -1,5 +1,5 @@
-import { context, SpanStatusCode, trace } from '@opentelemetry/api';
-import { metrics, MetricOptions, ObservableResult } from '@opentelemetry/api-metrics';
+import { Attributes, context, SpanStatusCode, trace } from '@opentelemetry/api';
+import { metrics, MetricOptions, ObservableResult, Counter } from '@opentelemetry/api-metrics';
 import { logs } from '@opentelemetry/api-logs';
 import { Tracer } from "jinaga/dist/util/trace";
 import { NodeTracerProvider, TracerConfig } from '@opentelemetry/sdk-trace-node';
@@ -17,6 +17,7 @@ export class OpenTelemetryTracer implements Tracer {
   private logger = logs.getLogger('default');
   private counterAccumulation: { [key: string]: number } = {};
   private counterTimeout: NodeJS.Timeout | null = null;
+  private counters: { [key: string]: Counter<Attributes> } = {};
 
   async dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
     const span = this.tracer.startSpan(name, {
@@ -47,7 +48,10 @@ this.meter.createObservableGauge(key, {
   }
 
   counter(name: string, value: number): void {
-    const counter = this.meter.createCounter(name);
+    if (!this.counters[name]) {
+      this.counters[name] = this.meter.createCounter(name);
+    }
+    const counter = this.counters[name];
     counter.add(value);
 
     if (this.counterTimeout) {
