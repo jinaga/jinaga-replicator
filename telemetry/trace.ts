@@ -39,11 +39,11 @@ export class OpenTelemetryTracer implements Tracer {
 
   metric(message: string, measurements: { [key: string]: number }): void {
     Object.entries(measurements).forEach(([key, value]) => {
-this.meter.createObservableGauge(key, {
-  callback: async (observableResult: ObservableResult) => {
-    observableResult.observe(value);
-  },
-} as MetricOptions);
+      this.meter.createObservableGauge(key, {
+        callback: async (observableResult: ObservableResult) => {
+          observableResult.observe(value);
+        },
+      } as MetricOptions);
     });
   }
 
