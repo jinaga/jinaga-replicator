@@ -260,6 +260,8 @@ The Jinaga Replicator can be configured using environment variables. Below are t
 - `JINAGA_POLICIES`: The path to the directory where the replicator will look for policy files. Default is `policies`.
 - `JINAGA_AUTHENTICATION`: The path to the directory where the replicator will look for authentication provider files. Default is `authentication`.
 - `JINAGA_SUBSCRIPTIONS`: The path to the directory where the replicator will look for subscription files. Default is `subscriptions`.
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: The OpenTelemetry OTLP endpoint accepting gRPC. If not set, OpenTelemetry will not be enabled.
+- `OTEL_SERVICE_NAME`: The OpenTelemetry service name. Default is `jinaga-replicator`.
 
 ### Example Configuration
 
@@ -273,10 +275,15 @@ docker run -d --name my-replicator \
   -e JINAGA_POLICIES=/custom/policies/path \
   -e JINAGA_AUTHENTICATION=/custom/auth/path \
   -e JINAGA_SUBSCRIPTIONS=/custom/subscriptions/path \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317 \
+  -e OTEL_SERVICE_NAME=my-replicator \
+  -v /path/to/your/policies:/custom/policies/path:ro \
+  -v /path/to/your/authentication:/custom/auth/path:ro \
+  -v /path/to/your/subscriptions:/custom/subscriptions/path:ro \
   jinaga/jinaga-replicator
 ```
 
-This will start a replicator on port 9090 with custom PostgreSQL connection string, and custom paths for policies, authentication, and subscription files.
+This will start a replicator on port 9090 with custom PostgreSQL connection string, and custom paths for policies, authentication, and subscription files. It will mount the respective directories from the host machine. OpenTelemetry will be enabled with the specified OTLP endpoint.
 
 ## Using as a Base Image
 

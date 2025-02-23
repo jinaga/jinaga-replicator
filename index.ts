@@ -1,20 +1,28 @@
+import shutdownTelemetry from "./telemetry/initialize";
+
 import express = require("express");
 import * as http from "http";
-import { Trace } from "jinaga";
 import { JinagaServer } from "jinaga-server";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
 import { loadPolicies } from "./loadPolicies";
-import { ReplicatorConsoleTracer } from "./replicatorConsoleTracer";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
+import { startTracer } from "./telemetry/tracer";
 import process = require("process");
 
-process.on('SIGINT', () => {
+startTracer();
+
+process.on('SIGINT', async () => {
   console.log("\n\nStopping replicator\n");
+  await shutdownTelemetry();
   process.exit(0);
 });
 
-Trace.configure(new ReplicatorConsoleTracer());
+process.on('SIGTERM', async () => {
+  console.log("\n\nStopping replicator\n");
+  await shutdownTelemetry();
+  process.exit(0);
+});
 
 const app = express();
 const server = http.createServer(app);

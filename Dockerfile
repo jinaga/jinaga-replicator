@@ -6,6 +6,7 @@ COPY package.json .
 COPY package-lock.json .
 COPY tsconfig.json .
 COPY *.ts .
+COPY telemetry telemetry
 RUN npm ci
 RUN npm run build
 
