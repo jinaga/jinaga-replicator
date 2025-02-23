@@ -1,6 +1,8 @@
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-grpc";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { Resource } from "@opentelemetry/resources";
+import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 
@@ -16,13 +18,18 @@ else {
     const traceExporter = new OTLPTraceExporter({
         url: OTEL_EXPORTER_OTLP_ENDPOINT
     });
+    const loggerExporter = new OTLPLogExporter({
+        url: OTEL_EXPORTER_OTLP_ENDPOINT
+    });
+    const logRecordProcessor = new BatchLogRecordProcessor(loggerExporter);
 
     sdk = new NodeSDK({
         traceExporter,
         instrumentations: [getNodeAutoInstrumentations()],
         resource: new Resource({
             [ATTR_SERVICE_NAME]: OTEL_SERVICE_NAME || 'jinaga-replicator',
-        })
+        }),
+        logRecordProcessors: [logRecordProcessor]
     });
 
     sdk.start();
