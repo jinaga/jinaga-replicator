@@ -1,3 +1,5 @@
+import shutdownTracer from "./telemetry/initialize";
+
 import express = require("express");
 import * as http from "http";
 import { Trace } from "jinaga";
@@ -7,10 +9,10 @@ import { findUpstreamReplicators } from "./findUpstreamReplicators";
 import { loadPolicies } from "./loadPolicies";
 import { ReplicatorConsoleTracer } from "./replicatorConsoleTracer";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
-import { startTracer, shutdownTracer } from "./telemetry/tracer";
+import { startTracer } from "./telemetry/tracer";
 import process = require("process");
 
-startTracer(process.env.OTEL_EXPORTER_OTLP_ENDPOINT);
+startTracer();
 
 process.on('SIGINT', async () => {
   console.log("\n\nStopping replicator\n");
