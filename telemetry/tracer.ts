@@ -9,7 +9,7 @@ let sdk: NodeSDK | undefined;
 
 export function startTracer(otelExporterOtlpEndpoint: string | undefined) {
   if (!otelExporterOtlpEndpoint) {
-    console.log('No OTLP endpoint provided. Tracing will not be enabled.');
+    console.log('OTEL_EXPORTER_OTLP_ENDPOINT is not set. Tracing will not be enabled.');
     return;
   }
   diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
