@@ -1,6 +1,4 @@
 const { trace, metrics } = require("@opentelemetry/api");
-const { BasicTracerProvider, SimpleSpanProcessor } = require("@opentelemetry/sdk-trace-base");
-const { MeterProvider } = require('@opentelemetry/sdk-metrics');
 const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
 const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc');
 const { Resource } = require('@opentelemetry/resources');
@@ -16,26 +14,9 @@ if (!OTEL_EXPORTER_OTLP_ENDPOINT) {
     console.log('OTEL_EXPORTER_OTLP_ENDPOINT is not set. Tracing will not be enabled.');
 }
 else {
-    const tracerProvider = new BasicTracerProvider();
     const traceExporter = new OTLPTraceExporter({
-        url: OTEL_EXPORTER_OTLP_ENDPOINT,
-        resource: new Resource({
-            [SemanticResourceAttributes.SERVICE_NAME]: OTEL_SERVICE_NAME || 'jinaga-replicator',
-        })
+        url: OTEL_EXPORTER_OTLP_ENDPOINT
     });
-    tracerProvider.addSpanProcessor(new SimpleSpanProcessor(traceExporter));
-    trace.setGlobalTracerProvider(tracerProvider);
-
-    const metricsExporter = new OTLPTraceExporter({
-        url: OTEL_EXPORTER_OTLP_ENDPOINT,
-        resource: new Resource({
-            [SemanticResourceAttributes.SERVICE_NAME]: OTEL_SERVICE_NAME || 'jinaga-replicator',
-        })
-    });
-    const metricsProvider = new MeterProvider({
-        exporter: metricsExporter
-    });
-    metrics.setGlobalMeterProvider(metricsProvider);
 
     sdk = new NodeSDK({
         traceExporter,
