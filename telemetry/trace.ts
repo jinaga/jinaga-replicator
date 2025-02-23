@@ -15,6 +15,8 @@ export class OpenTelemetryTracer implements Tracer {
   private tracer = trace.getTracer('default');
   private meter = metrics.getMeter('default');
   private logger = logs.getLogger('default');
+  private counterAccumulation: { [key: string]: number } = {};
+  private counterTimeout: NodeJS.Timeout | null = null;
 
   async dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
     const span = this.tracer.startSpan(name, {
@@ -47,6 +49,19 @@ this.meter.createObservableGauge(key, {
   counter(name: string, value: number): void {
     const counter = this.meter.createCounter(name);
     counter.add(value);
+
+    if (this.counterTimeout) {
+      this.counterAccumulation[name] = (this.counterAccumulation[name] || 0) + value;
+    } else {
+      this.counterAccumulation[name] = value;
+      this.counterTimeout = setTimeout(() => {
+        for (const [counterName, counterValue] of Object.entries(this.counterAccumulation)) {
+          console.info(`COUNTER: ${counterName} incremented by ${counterValue}`);
+        }
+        this.counterAccumulation = {};
+        this.counterTimeout = null;
+      }, 1000);
+    }
   }
 
   info(message: string): void {

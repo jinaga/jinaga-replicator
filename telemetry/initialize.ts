@@ -1,19 +1,18 @@
-const { trace, metrics } = require("@opentelemetry/api");
-const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
-const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc');
-const { Resource } = require('@opentelemetry/resources');
-const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
-const { NodeSDK } = require('@opentelemetry/sdk-node');
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
+import { Resource } from "@opentelemetry/resources";
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 
-let sdk: any;
+let sdk: NodeSDK | undefined;
 
-// Create and register an SDK
 const OTEL_EXPORTER_OTLP_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const OTEL_SERVICE_NAME = process.env.OTEL_SERVICE_NAME;
 if (!OTEL_EXPORTER_OTLP_ENDPOINT) {
     console.log('OTEL_EXPORTER_OTLP_ENDPOINT is not set. Tracing will not be enabled.');
 }
 else {
+    // Create and register an SDK
     const traceExporter = new OTLPTraceExporter({
         url: OTEL_EXPORTER_OTLP_ENDPOINT
     });
@@ -22,14 +21,14 @@ else {
         traceExporter,
         instrumentations: [getNodeAutoInstrumentations()],
         resource: new Resource({
-            [SemanticResourceAttributes.SERVICE_NAME]: OTEL_SERVICE_NAME || 'jinaga-replicator',
+            [ATTR_SERVICE_NAME]: OTEL_SERVICE_NAME || 'jinaga-replicator',
         })
     });
 
     sdk.start();
 }
 
-export default async function shutdownTracer() {
+export default async function shutdownTelemetry() {
     if (!sdk) {
         return Promise.resolve();
     }
