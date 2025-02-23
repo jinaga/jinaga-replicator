@@ -1,5 +1,4 @@
-import { Attributes, context, SpanStatusCode, trace } from '@opentelemetry/api';
-import { metrics, MetricOptions, ObservableResult, Counter } from '@opentelemetry/api-metrics';
+import { Attributes, context, Counter, MetricOptions, metrics, ObservableResult, SpanStatusCode, trace } from '@opentelemetry/api';
 import { logs } from '@opentelemetry/api-logs';
 import { Tracer } from "jinaga/dist/util/trace";
 import { NodeTracerProvider, TracerConfig } from '@opentelemetry/sdk-trace-node';
