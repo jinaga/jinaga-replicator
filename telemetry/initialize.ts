@@ -18,13 +18,19 @@ if (!OTEL_EXPORTER_OTLP_ENDPOINT) {
 else {
     const tracerProvider = new BasicTracerProvider();
     const traceExporter = new OTLPTraceExporter({
-        url: OTEL_EXPORTER_OTLP_ENDPOINT
+        url: OTEL_EXPORTER_OTLP_ENDPOINT,
+        resource: new Resource({
+            [SemanticResourceAttributes.SERVICE_NAME]: OTEL_SERVICE_NAME || 'jinaga-replicator',
+        })
     });
     tracerProvider.addSpanProcessor(new SimpleSpanProcessor(traceExporter));
     trace.setGlobalTracerProvider(tracerProvider);
 
     const metricsExporter = new OTLPTraceExporter({
-        url: OTEL_EXPORTER_OTLP_ENDPOINT
+        url: OTEL_EXPORTER_OTLP_ENDPOINT,
+        resource: new Resource({
+            [SemanticResourceAttributes.SERVICE_NAME]: OTEL_SERVICE_NAME || 'jinaga-replicator',
+        })
     });
     const metricsProvider = new MeterProvider({
         exporter: metricsExporter
