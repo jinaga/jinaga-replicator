@@ -19,6 +19,10 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
         let possibleConfigs: AuthenticationConfiguration[] = configs;
 
         try {
+            if (req.method === "OPTIONS") {
+                next();
+                return;
+            }
             const authorization = req.headers.authorization;
             if (authorization) {
                 const match = authorization.match(/^Bearer (.*)$/);
