@@ -19,6 +19,10 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
         let possibleConfigs: AuthenticationConfiguration[] = configs;
 
         try {
+            if (req.method === "OPTIONS") {
+                next();
+                return;
+            }
             const authorization = req.headers.authorization;
             if (authorization) {
                 const match = authorization.match(/^Bearer (.*)$/);
@@ -26,6 +30,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     const token = match[1];
                     const payload = decode(token);
                     if (!payload || typeof payload !== "object") {
+                        res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid token");
                         return;
                     }
@@ -33,6 +38,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     // Validate the subject.
                     const subject = payload.sub;
                     if (typeof subject !== "string") {
+                        res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid subject");
                         return;
                     }
@@ -41,12 +47,14 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     const issuer = payload.iss;
                     possibleConfigs = configs.filter(config => config.issuer === issuer);
                     if (possibleConfigs.length === 0) {
+                        res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid issuer");
                         return;
                     }
                     const audience = payload.aud;
                     possibleConfigs = possibleConfigs.filter(config => config.audience === audience);
                     if (possibleConfigs.length === 0) {
+                        res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid audience");
                         return;
                     }
@@ -68,6 +76,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     });
 
                     if (!verified) {
+                        res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid signature");
                         return;
                     }
@@ -84,6 +93,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                 }
             }
             else if (!allowAnonymous) {
+                res.set('Access-Control-Allow-Origin', '*');
                 res.status(401).send("No token");
                 return;
             }
