@@ -157,8 +157,15 @@ async function loadConfigurationFromFile(path: string): Promise<AuthenticationCo
         const content = iconv.decode(buffer, encoding);
         const config = JSON.parse(content);
 
-        if (!config.provider || !config.issuer || !config.audience || !config.key_id || !config.key) {
-            throw new Error(`Invalid authentication configuration`);
+        const missingFields = [];
+        if (!config.provider) missingFields.push("provider");
+        if (!config.issuer) missingFields.push("issuer");
+        if (!config.audience) missingFields.push("audience");
+        if (!config.key_id) missingFields.push("key_id");
+        if (!config.key) missingFields.push("key");
+
+        if (missingFields.length > 0) {
+            throw new Error(`Invalid authentication configuration in ${path}: Missing required fields: ${missingFields.join(", ")}`);
         }
 
         return {
