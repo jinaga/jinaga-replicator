@@ -39,6 +39,9 @@ server.on('clientError', (err: Error & { code?: string }, socket) => {
     socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
   }
 });
+process.on('unhandledRejection', (reason, promise) => {
+  Trace.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
+});
 
 app.set('port', process.env.PORT || 8080);
 app.use(express.json());
