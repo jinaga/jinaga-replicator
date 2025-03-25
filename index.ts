@@ -9,6 +9,7 @@ import { loadPolicies } from "./loadPolicies";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import { startTracer } from "./telemetry/tracer";
 import process = require("process");
+import { Trace } from "jinaga";
 
 startTracer();
 
@@ -26,6 +27,18 @@ process.on('SIGTERM', async () => {
 
 const app = express();
 const server = http.createServer(app);
+
+server.on('clientError', (err: Error & { code?: string }, socket) => {
+  if (err.code === 'ECONNRESET') {
+    // Connection reset by peer, just end the socket gracefully.
+    Trace.warn('Client error, ECONNRESET');
+    socket.end();
+  } else {
+    // For other errors, send a generic bad request response.
+    Trace.warn('Client error, bad request');
+    socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+  }
+});
 
 app.set('port', process.env.PORT || 8080);
 app.use(express.json());
