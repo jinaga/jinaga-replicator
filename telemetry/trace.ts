@@ -1,10 +1,10 @@
-import { Attributes, context, Counter, MetricOptions, metrics, ObservableResult, SpanStatusCode, trace } from '@opentelemetry/api';
+import { Attributes, context, Counter, Histogram, MetricOptions, metrics, ObservableResult, SpanStatusCode, trace } from '@opentelemetry/api';
 import { logs } from '@opentelemetry/api-logs';
-import { Tracer } from "jinaga/dist/util/trace";
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { NodeTracerProvider, TracerConfig } from '@opentelemetry/sdk-trace-node';
+import { Tracer } from "jinaga/dist/util/trace";
 
 // Configure the exporter
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 const exporter = new OTLPTraceExporter();
 trace.setGlobalTracerProvider(new NodeTracerProvider({
   exporter,
@@ -17,13 +17,29 @@ export class OpenTelemetryTracer implements Tracer {
   private counterAccumulation: { [key: string]: number } = {};
   private counterTimeout: NodeJS.Timeout | null = null;
   private counters: { [key: string]: Counter<Attributes> } = {};
+  private histograms: { [key: string]: Histogram<Attributes> } = {};
 
   async dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
+    let histogram: Histogram<Attributes>;
+    let success = false;
+    if (!this.histograms[name]) {
+      histogram = this.meter.createHistogram(`${name}_duration`, {
+        description: `Histogram for ${name}`,
+        unit: 'ms',
+      });
+      this.histograms[name] = histogram;
+    } else {
+      histogram = this.histograms[name];
+    }
+    const startTime = process.hrtime();
     const span = this.tracer.startSpan(name, {
       attributes: { data },
     });
     try {
-      return await context.with(trace.setSpan(context.active(), span), operation);
+      const result = await context.with(trace.setSpan(context.active(), span), operation);
+      success = true;
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
     } catch (error) {
       if (error instanceof Error) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
@@ -33,6 +49,12 @@ export class OpenTelemetryTracer implements Tracer {
       throw error;
     } finally {
       span.end();
+      const [seconds, nanoseconds] = process.hrtime(startTime);
+      const duration = seconds * 1000 + nanoseconds / 1e6;
+      histogram.record(duration, {
+        data,
+        success,
+      });
     }
   }
 
