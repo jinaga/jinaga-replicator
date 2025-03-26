@@ -40,7 +40,7 @@ server.on('clientError', (err: Error & { code?: string }, socket) => {
   }
 });
 process.on('unhandledRejection', (reason, promise) => {
-  Trace.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
+  Trace.error(new Error(`Unhandled Rejection at: ${promise}, reason: ${reason}`));
 });
 
 app.set('port', process.env.PORT || 8080);
