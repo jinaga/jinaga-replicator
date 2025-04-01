@@ -32,6 +32,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     if (!payload || typeof payload !== "object") {
                         res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid token");
+                        Trace.warn(`Invalid token: ${payload}`);
                         return;
                     }
 
@@ -40,6 +41,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     if (typeof subject !== "string") {
                         res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid subject");
+                        Trace.warn(`Invalid subject: ${subject}`);
                         return;
                     }
 
@@ -49,6 +51,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     if (possibleConfigs.length === 0) {
                         res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid issuer");
+                        Trace.warn(`Invalid issuer: ${issuer}`);
                         return;
                     }
                     const audience = payload.aud;
@@ -56,6 +59,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     if (possibleConfigs.length === 0) {
                         res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid audience");
+                        Trace.warn(`Invalid audience: ${audience}`);
                         return;
                     }
 
@@ -64,7 +68,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     verify(token, (header, callback) => {
                         const config = possibleConfigs.find(config => config.keyId === header.kid);
                         if (!config) {
-                            callback(new Error("Invalid key ID"));
+                            callback(new Error(`Invalid key ID: ${header.kid}`));
                             return;
                         }
                         provider = config.provider;
@@ -73,11 +77,15 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                         if (!error) {
                             verified = payload;
                         }
+                        else {
+                            Trace.warn(`Error during authentication: ${error.message || error}`);
+                        }
                     });
 
                     if (!verified) {
                         res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid signature");
+                        Trace.warn(`Invalid signature`);
                         return;
                     }
 
@@ -95,10 +103,12 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
             else if (!allowAnonymous) {
                 res.set('Access-Control-Allow-Origin', '*');
                 res.status(401).send("No token");
+                Trace.warn("No access token provided");
                 return;
             }
             next();
         } catch (error) {
+            Trace.error(error);
             next(error);
         }
     }
