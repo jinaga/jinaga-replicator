@@ -8,6 +8,7 @@ import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { ConsoleTracer, Trace } from "jinaga";
 
 let sdk: NodeSDK | undefined;
 
@@ -15,9 +16,7 @@ const OTEL_EXPORTER_OTLP_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const OTEL_SERVICE_NAME = process.env.OTEL_SERVICE_NAME;
 
 // Set up telemetry if endpoint is configured
-if (!OTEL_EXPORTER_OTLP_ENDPOINT) {
-    console.log('OTEL_EXPORTER_OTLP_ENDPOINT is not set. Tracing will not be enabled.');
-} else {
+if (OTEL_EXPORTER_OTLP_ENDPOINT) {
     const traceExporter = new OTLPTraceExporter({
         url: OTEL_EXPORTER_OTLP_ENDPOINT
     });
