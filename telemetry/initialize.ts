@@ -16,10 +16,7 @@ const OTEL_EXPORTER_OTLP_ENDPOINT = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const OTEL_SERVICE_NAME = process.env.OTEL_SERVICE_NAME;
 
 // Set up telemetry if endpoint is configured
-if (!OTEL_EXPORTER_OTLP_ENDPOINT) {
-    console.log('OTEL_EXPORTER_OTLP_ENDPOINT is not set. Logs will appear in the console.');
-    Trace.configure(new ConsoleTracer());
-} else {
+if (OTEL_EXPORTER_OTLP_ENDPOINT) {
     const traceExporter = new OTLPTraceExporter({
         url: OTEL_EXPORTER_OTLP_ENDPOINT
     });
