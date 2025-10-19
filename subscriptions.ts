@@ -63,7 +63,7 @@ async function loadSubscription(path: string): Promise<Subscription[]> {
         Trace.info(`Loading subscriptions from ${path}`);
 
         const buffer = await readFile(path);
-        const encoding = chardet.detect(buffer) || 'utf-8';
+        const encoding = (chardet.detect(buffer as any) || 'utf-8').toLowerCase();
         const content = iconv.decode(buffer, encoding);
 
         return parseSubscriptions(content);
@@ -91,9 +91,9 @@ function parseSubscriptions(content: string) {
             declaration = parser.parseDeclaration(declaration);
             const specification = parser.parseSpecification();
             const start = specification.given.map(g => {
-                const givenDeclaration = declaration.find(d => d.name === g.name);
+                const givenDeclaration = declaration.find(d => d.name === g.label.name);
                 if (!givenDeclaration) {
-                    throw new Error(`Declaration not found for ${g.name}`);
+                    throw new Error(`Declaration not found for ${g.label.name}`);
                 }
                 return givenDeclaration.declared.reference;
             });

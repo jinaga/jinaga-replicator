@@ -163,7 +163,7 @@ async function loadConfigurationFromFile(path: string): Promise<AuthenticationCo
         Trace.info(`Searching for authentication files in ${path}`);
 
         const buffer = await readFile(path);
-        const encoding = chardet.detect(buffer) || 'utf-8';
+        const encoding = (chardet.detect(buffer as any) || 'utf-8').toLowerCase();
         const content = iconv.decode(buffer, encoding);
         const config = JSON.parse(content);
 

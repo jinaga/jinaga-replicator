@@ -1,6 +1,6 @@
+import * as chardet from "chardet";
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
-import * as chardet from "chardet";
 import { RuleSet, Trace } from "jinaga";
 import { join } from "path";
 
@@ -64,7 +64,7 @@ async function loadRuleSetFromFile(path: string): Promise<RuleSet> {
         Trace.info(`Loading rule set from ${path}`);
 
         const buffer = await readFile(path);
-        const encoding = chardet.detect(buffer) || 'utf-8';
+        const encoding = (chardet.detect(buffer as any) || 'utf-8').toLowerCase();
         const description = iconv.decode(buffer, encoding);
         const ruleSet = RuleSet.loadFromDescription(description);
         return ruleSet;
