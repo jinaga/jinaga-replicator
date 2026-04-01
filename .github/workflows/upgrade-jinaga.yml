@@ -1,0 +1,69 @@
+name: Upgrade Jinaga Packages
+
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+jobs:
+
+  upgrade:
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      -
+        name: Check for updates
+        id: check
+        run: |
+          CURRENT_JINAGA=$(node -p "require('./package.json').dependencies.jinaga.replace(/^\^/, '')")
+          CURRENT_SERVER=$(node -p "require('./package.json').dependencies['jinaga-server'].replace(/^\^/, '')")
+          LATEST_JINAGA=$(npm view jinaga version)
+          LATEST_SERVER=$(npm view jinaga-server version)
+
+          echo "current_jinaga=$CURRENT_JINAGA" >> "$GITHUB_OUTPUT"
+          echo "current_server=$CURRENT_SERVER" >> "$GITHUB_OUTPUT"
+          echo "latest_jinaga=$LATEST_JINAGA" >> "$GITHUB_OUTPUT"
+          echo "latest_server=$LATEST_SERVER" >> "$GITHUB_OUTPUT"
+
+          if [ "$CURRENT_JINAGA" != "$LATEST_JINAGA" ] || [ "$CURRENT_SERVER" != "$LATEST_SERVER" ]; then
+            echo "updates_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "updates_available=false" >> "$GITHUB_OUTPUT"
+          fi
+      -
+        name: Install updated packages
+        if: steps.check.outputs.updates_available == 'true'
+        run: |
+          npm install \
+            jinaga@${{ steps.check.outputs.latest_jinaga }} \
+            jinaga-server@${{ steps.check.outputs.latest_server }}
+      -
+        name: Open pull request
+        if: steps.check.outputs.updates_available == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: |
+            Upgrade jinaga to ${{ steps.check.outputs.latest_jinaga }}, jinaga-server to ${{ steps.check.outputs.latest_server }}
+          branch: upgrade/jinaga-packages
+          title: 'Upgrade jinaga to ${{ steps.check.outputs.latest_jinaga }}, jinaga-server to ${{ steps.check.outputs.latest_server }}'
+          body: |
+            Automated dependency upgrade.
+
+            | Package | From | To |
+            |---|---|---|
+            | jinaga | ${{ steps.check.outputs.current_jinaga }} | ${{ steps.check.outputs.latest_jinaga }} |
+            | jinaga-server | ${{ steps.check.outputs.current_server }} | ${{ steps.check.outputs.latest_server }} |
+          labels: dependencies
