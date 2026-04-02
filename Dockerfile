@@ -24,9 +24,7 @@ ENV NODE_ENV=production
 
 RUN npm ci
 
-ENV POSTGRES_PASSWORD=adminpw
 ENV APP_USERNAME=repl
-ENV APP_PASSWORD=replpw
 ENV APP_DATABASE=replicator
 
 RUN apk add --update nodejs npm
