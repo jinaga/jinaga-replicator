@@ -50,7 +50,12 @@ Replace `/path/to/your/authentication` with the path to the directory on your ho
 
 ### JSON Provider File Specification
 
-Each JSON provider file should have the following structure:
+A provider can resolve signing keys in one of two mutually exclusive ways:
+
+1. **Static key** — pin a single key with `key_id` and `key`. Best for offline or symmetric (shared-secret) setups.
+2. **JWKS endpoint** — declare a `jwks_uri` and the replicator resolves the signing key dynamically by the token's `kid` against the issuer's JWKS document (e.g. `.well-known/jwks.json`). Keys are cached and re-fetched on a cache miss, so issuer key rotation (including KMS-backed rotation) is picked up automatically without regenerating the file.
+
+A provider file must use exactly one of these modes. Specifying `jwks_uri` together with `key` or `key_id` is rejected at startup.
 
 ```json
 {
@@ -58,19 +63,23 @@ Each JSON provider file should have the following structure:
     "issuer": "string",
     "audience": "string",
     "key_id": "string",
-    "key": "string"
+    "key": "string",
+    "jwks_uri": "string"
 }
 ```
 
 - `provider`: A unique identifier for the authentication provider.
 - `issuer`: The expected issuer (`iss`) claim in the JWT.
 - `audience`: The expected audience (`aud`) claim in the JWT.
-- `key_id`: The key identifier (`kid`) used to select the key for verifying the JWT signature.
-- `key`: The key used to verify the JWT signature. This can be a PEM-encoded public key for asymmetric algorithms, or a shared key for symmetric algorithms.
+- `key_id` *(static mode)*: The key identifier (`kid`) used to select the key for verifying the JWT signature.
+- `key` *(static mode)*: The key used to verify the JWT signature. This can be a PEM-encoded public key for asymmetric algorithms, or a shared key for symmetric algorithms.
+- `jwks_uri` *(JWKS mode)*: The HTTP(S) URL of the issuer's JWKS document. The signing key is selected by the token's `kid`.
 
-### Example
+The replicator enforces an explicit algorithm allowlist when verifying signatures (defense-in-depth against algorithm-confusion attacks): PEM public keys and JWKS-resolved keys are restricted to `RS256`, while static symmetric keys permit the HMAC family (`HS256`, `HS384`, `HS512`).
 
-Here is an example of an authentication provider file using RSA validation:
+### Examples
+
+An authentication provider using a static RSA public key:
 
 ```json
 {
@@ -79,6 +88,17 @@ Here is an example of an authentication provider file using RSA validation:
     "audience": "my-replicator",
     "key_id": "WVoKvLhSUl8cJRNGo6pKUUvia8Q",
 	"key": "-----BEGIN PUBLIC KEY-----\nMIIBI...DAQAB\n-----END PUBLIC KEY-----"
+}
+```
+
+An authentication provider that resolves keys from a JWKS endpoint (supports RS256 key rotation):
+
+```json
+{
+    "provider": "example-jwks",
+    "issuer": "https://example.com",
+    "audience": "my-replicator",
+    "jwks_uri": "https://example.com/.well-known/jwks.json"
 }
 ```
 

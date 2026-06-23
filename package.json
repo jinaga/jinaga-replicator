@@ -29,6 +29,7 @@
     "jinaga": "^6.8.3",
     "jinaga-server": "^3.6.0",
     "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.2.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
