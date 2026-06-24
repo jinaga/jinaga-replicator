@@ -3,7 +3,7 @@ import { NextFunction, Request, Response } from "express";
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
 import { Trace } from "jinaga";
-import { Algorithm, decode, GetPublicKeyOrSecret, JwtHeader, JwtPayload, SigningKeyCallback, verify } from "jsonwebtoken";
+import { Algorithm, decode, JwtHeader, JwtPayload, verify } from "jsonwebtoken";
 import jwksRsa = require("jwks-rsa");
 import { join } from "path";
 
@@ -20,8 +20,11 @@ interface AuthenticationConfiguration {
 const RSA_ALGORITHMS: Algorithm[] = ["RS256"];
 const HMAC_ALGORITHMS: Algorithm[] = ["HS256", "HS384", "HS512"];
 
+// A PEM-encoded asymmetric key (or certificate) begins with a structured
+// header line such as "-----BEGIN PUBLIC KEY-----". A loose substring check
+// would misclassify a symmetric secret that merely contains "-----BEGIN".
 function isPemKey(key: string): boolean {
-    return key.includes("-----BEGIN");
+    return /-----BEGIN (?:[A-Z0-9]+ )*(?:PUBLIC KEY|CERTIFICATE)-----/.test(key);
 }
 
 export function authenticate(configs: AuthenticationConfiguration[], allowAnonymous: boolean) {
@@ -38,13 +41,15 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                 const match = authorization.match(/^Bearer (.*)$/);
                 if (match) {
                     const token = match[1];
-                    const payload = decode(token);
-                    if (!payload || typeof payload !== "object") {
+                    const decoded = decode(token, { complete: true });
+                    const payload = decoded?.payload;
+                    if (!decoded || !payload || typeof payload !== "object") {
                         res.set('Access-Control-Allow-Origin', '*');
                         res.status(401).send("Invalid token");
                         Trace.warn(`Invalid token: ${payload}`);
                         return;
                     }
+                    const header = decoded.header;
 
                     // Validate the subject.
                     const subject = payload.sub;
@@ -76,9 +81,17 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     let verified: string | JwtPayload | undefined;
                     let provider: string = "";
                     try {
-                        const result = await verifyToken(token, possibleConfigs);
-                        verified = result.payload;
-                        provider = result.provider;
+                        // Resolve the single config (and its key) that matches this
+                        // token's kid, then verify with an algorithm allowlist scoped
+                        // to that key alone — never a union across providers, which
+                        // would reopen the RS256->HS256 confusion an allowlist closes.
+                        const resolution = await resolveVerificationKey(header, possibleConfigs);
+                        if (resolution) {
+                            verified = await verifyToken(token, resolution.key, resolution.algorithms);
+                            provider = resolution.provider;
+                        } else {
+                            Trace.warn(`No signing key for key ID: ${header.kid}`);
+                        }
                     } catch (error) {
                         Trace.warn(`Error during authentication: ${error instanceof Error ? error.message : error}`);
                     }
@@ -115,66 +128,85 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
     }
 }
 
+interface ResolvedVerificationKey {
+    key: string;
+    algorithms: Algorithm[];
+    provider: string;
+}
+
 // Resolve the signing key for a token by its `kid`, supporting both static keys
 // (matched by `key_id`) and dynamic JWKS endpoints (resolved by `kid`, with
-// caching and cache-miss refetch handled by jwks-rsa). The verification is
-// asynchronous because JWKS resolution may require a network round-trip.
-function verifyToken(
-    token: string,
+// caching and cache-miss refetch handled by jwks-rsa). Resolution is
+// asynchronous because a JWKS lookup may require a network round-trip.
+//
+// Exactly one config (and therefore one key) is selected, so the algorithm
+// allowlist returned alongside it is scoped to that key's type alone — RS256
+// for asymmetric/JWKS keys, the HMAC family for symmetric secrets. This is
+// deliberate: a union of algorithms across providers sharing an issuer/audience
+// would let an attacker present `alg: HS256` against a PEM public key
+// (algorithm-confusion).
+async function resolveVerificationKey(
+    header: JwtHeader,
     possibleConfigs: AuthenticationConfiguration[]
-): Promise<{ payload: string | JwtPayload; provider: string }> {
-    return new Promise((resolve, reject) => {
-        let provider: string = "";
+): Promise<ResolvedVerificationKey | undefined> {
+    // A `kid` is required to select a key in both modes; fail fast without one.
+    const kid = header.kid;
+    if (!kid) {
+        return undefined;
+    }
 
-        const getKey: GetPublicKeyOrSecret = (header: JwtHeader, callback: SigningKeyCallback) => {
-            // Prefer a static key whose key_id matches the token's kid.
-            const staticConfig = possibleConfigs.find(config => config.key !== undefined && config.keyId === header.kid);
-            if (staticConfig) {
-                provider = staticConfig.provider;
-                callback(null, staticConfig.key);
-                return;
-            }
-
-            // Fall back to a JWKS endpoint, resolving the key by kid.
-            const jwksConfig = possibleConfigs.find(config => config.jwksClient !== undefined);
-            if (jwksConfig && jwksConfig.jwksClient) {
-                provider = jwksConfig.provider;
-                jwksConfig.jwksClient.getSigningKey(header.kid, (error, key) => {
-                    if (error || !key) {
-                        callback(error ?? new Error(`Invalid key ID: ${header.kid}`));
-                        return;
-                    }
-                    callback(null, key.getPublicKey());
-                });
-                return;
-            }
-
-            callback(new Error(`Invalid key ID: ${header.kid}`));
+    // Prefer a static key whose key_id matches the token's kid.
+    const staticConfig = possibleConfigs.find(config => config.key !== undefined && config.keyId === kid);
+    if (staticConfig && staticConfig.key !== undefined) {
+        return {
+            key: staticConfig.key,
+            algorithms: isPemKey(staticConfig.key) ? RSA_ALGORITHMS : HMAC_ALGORITHMS,
+            provider: staticConfig.provider
         };
+    }
 
-        verify(token, getKey, { algorithms: allowedAlgorithms(possibleConfigs) }, (error, payload) => {
-            if (error || !payload) {
-                reject(error ?? new Error("Token verification produced no payload"));
-                return;
+    // Otherwise try each JWKS endpoint, resolving by kid. Trying each (rather
+    // than blindly taking the first) disambiguates when more than one JWKS
+    // provider shares the issuer/audience: the one that actually publishes the
+    // kid wins.
+    for (const config of possibleConfigs) {
+        if (config.jwksClient) {
+            const key = await getSigningKey(config.jwksClient, kid);
+            if (key) {
+                return {
+                    key,
+                    algorithms: RSA_ALGORITHMS,
+                    provider: config.provider
+                };
             }
-            resolve({ payload, provider });
+        }
+    }
+
+    return undefined;
+}
+
+// Promisified jwks-rsa key lookup. Resolves to the PEM public key for the kid,
+// or undefined if the endpoint does not publish it (or the fetch fails).
+function getSigningKey(client: jwksRsa.JwksClient, kid: string): Promise<string | undefined> {
+    return new Promise(resolve => {
+        client.getSigningKey(kid, (error, key) => {
+            resolve(error || !key ? undefined : key.getPublicKey());
         });
     });
 }
 
-// Compute the explicit algorithms allowlist (defense-in-depth against
-// algorithm-confusion attacks such as RS256 -> HS256). Asymmetric keys (PEM or
-// JWKS) permit RS256; static symmetric secrets permit the HMAC family.
-function allowedAlgorithms(possibleConfigs: AuthenticationConfiguration[]): Algorithm[] {
-    const algorithms = new Set<Algorithm>();
-    for (const config of possibleConfigs) {
-        if (config.jwksUri !== undefined || (config.key !== undefined && isPemKey(config.key))) {
-            RSA_ALGORITHMS.forEach(algorithm => algorithms.add(algorithm));
-        } else if (config.key !== undefined) {
-            HMAC_ALGORITHMS.forEach(algorithm => algorithms.add(algorithm));
-        }
-    }
-    return [...algorithms];
+// Verify a token against a single resolved key, constrained to the explicit
+// algorithm allowlist for that key.
+function verifyToken(token: string, key: string, algorithms: Algorithm[]): Promise<string | JwtPayload> {
+    return new Promise((resolve, reject) => {
+        verify(token, key, { algorithms }, (error, payload) => {
+            if (error || !payload) {
+                reject(error ?? new Error("Token verification produced no payload"));
+                return;
+            }
+            resolve(payload);
+        });
+    });
 }
 
 export async function loadAuthenticationConfigurations(path: string): Promise<{ configs: AuthenticationConfiguration[], allowAnonymous: boolean }> {

@@ -57,13 +57,25 @@ A provider can resolve signing keys in one of two mutually exclusive ways:
 
 A provider file must use exactly one of these modes. Specifying `jwks_uri` together with `key` or `key_id` is rejected at startup.
 
+A **static key** provider has this shape:
+
 ```json
 {
     "provider": "string",
     "issuer": "string",
     "audience": "string",
     "key_id": "string",
-    "key": "string",
+    "key": "string"
+}
+```
+
+A **JWKS endpoint** provider has this shape:
+
+```json
+{
+    "provider": "string",
+    "issuer": "string",
+    "audience": "string",
     "jwks_uri": "string"
 }
 ```
