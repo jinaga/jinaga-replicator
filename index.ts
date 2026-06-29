@@ -1,15 +1,22 @@
 import shutdownTelemetry from "./telemetry/initialize";
 
 import express = require("express");
+import { Handler } from "express";
 import * as http from "http";
-import { JinagaServer } from "jinaga-server";
+import { JinagaServer, JinagaServerInstance } from "jinaga-server";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
 import { loadPolicies } from "./loadPolicies";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
+import { watchPolicies } from "./watchPolicies";
 import { startTracer } from "./telemetry/tracer";
 import process = require("process");
-import { Trace } from "jinaga";
+import { RuleSet, Trace } from "jinaga";
+
+// Grace period before a superseded replicator instance is torn down, so that
+// requests still in flight against the old rules can finish before its
+// database pools are closed.
+const RELOAD_GRACE_MS = 30_000;
 
 startTracer();
 
@@ -53,29 +60,84 @@ async function initializeReplicator() {
   const policiesPath = process.env.JINAGA_POLICIES || 'policies';
   const authenticationPath = process.env.JINAGA_AUTHENTICATION || 'authentication';
   const subscriptionPath = process.env.JINAGA_SUBSCRIPTIONS || 'subscriptions';
-  const ruleSet = await loadPolicies(policiesPath);
   const { configs, allowAnonymous } = await loadAuthenticationConfigurations(authenticationPath);
   const subscriptions = await loadSubscriptions(subscriptionPath);
 
   const upstreamReplicators = findUpstreamReplicators();
 
-  const { handler, factManager } = JinagaServer.create({
-    pgStore: pgConnection,
-    pgKeystore: pgConnection,
-    upstreamReplicators: upstreamReplicators,
-    authorization: ruleSet ? a => ruleSet.authorizationRules : undefined,
-    distribution: ruleSet ? d => ruleSet.distributionRules : undefined,
-    purgeConditions: ruleSet ? p => ruleSet.purgeConditions : undefined
-  });
+  function buildInstance(ruleSet: RuleSet | undefined): JinagaServerInstance {
+    return JinagaServer.create({
+      pgStore: pgConnection,
+      pgKeystore: pgConnection,
+      upstreamReplicators: upstreamReplicators,
+      authorization: ruleSet ? a => ruleSet.authorizationRules : undefined,
+      distribution: ruleSet ? d => ruleSet.distributionRules : undefined,
+      purgeConditions: ruleSet ? p => ruleSet.purgeConditions : undefined
+    });
+  }
 
-  app.use('/jinaga', authenticate(configs, allowAnonymous), handler);
+  const ruleSet = await loadPolicies(policiesPath);
+  let currentInstance = buildInstance(ruleSet);
+
+  // A stable wrapper is mounted at /jinaga and delegates to the active handler.
+  // Reloading the policies rebuilds the instance and swaps activeHandler so that
+  // subsequent requests enforce the new rules; in-flight requests finish against
+  // the old handler (eventually consistent).
+  let activeHandler: Handler = currentInstance.handler;
+  app.use('/jinaga', authenticate(configs, allowAnonymous), (req, res, next) => activeHandler(req, res, next));
 
   server.listen(app.get('port'), () => {
-    runSubscriptions(subscriptions, factManager);
+    runSubscriptions(subscriptions, currentInstance.factManager);
     printLogo();
     console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
     console.log('  Press CTRL-C to stop\n');
   });
+
+  if (process.env.JINAGA_POLICIES_WATCH === 'true') {
+    watchPolicies({
+      path: policiesPath,
+      onReload: () => reloadPolicies(policiesPath, buildInstance, subscriptions,
+        () => currentInstance,
+        instance => { activeHandler = instance.handler; currentInstance = instance; })
+    });
+  }
+}
+
+// Re-read the policy directory and atomically swap in a freshly built instance.
+// On a parse error the current rules are kept and the failure is logged, so a
+// malformed edit never takes down a running replicator.
+async function reloadPolicies(
+  policiesPath: string,
+  buildInstance: (ruleSet: RuleSet | undefined) => JinagaServerInstance,
+  subscriptions: Awaited<ReturnType<typeof loadSubscriptions>>,
+  getCurrent: () => JinagaServerInstance,
+  setCurrent: (instance: JinagaServerInstance) => void
+): Promise<void> {
+  let ruleSet: RuleSet | undefined;
+  try {
+    ruleSet = await loadPolicies(policiesPath);
+  }
+  catch (error) {
+    Trace.warn(`Failed to reload security policies; keeping the currently loaded rules. ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  const previousInstance = getCurrent();
+  const newInstance = buildInstance(ruleSet);
+
+  // Subscriptions follow the active instance, so re-attach them to the new
+  // fact manager before retiring the old one.
+  runSubscriptions(subscriptions, newInstance.factManager);
+
+  setCurrent(newInstance);
+  Trace.info('Reloaded security policies.');
+
+  // Retire the superseded instance after a grace period so in-flight requests
+  // and its subscriptions wind down before its database pools are closed.
+  setTimeout(() => {
+    previousInstance.close().catch(error =>
+      Trace.warn(`Error closing superseded replicator instance: ${error instanceof Error ? error.message : String(error)}`));
+  }, RELOAD_GRACE_MS).unref();
 }
 
 initializeReplicator()
