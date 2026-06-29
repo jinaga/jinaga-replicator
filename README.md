@@ -290,6 +290,7 @@ The Jinaga Replicator can be configured using environment variables. Below are t
 - `PORT`: The port on which the replicator will listen. Default is `8080`.
 - `JINAGA_POSTGRESQL`: The PostgreSQL connection string. Default is `postgresql://repl:replpw@localhost:5432/replicator`.
 - `JINAGA_POLICIES`: The path to the directory where the replicator will look for policy files. Default is `policies`.
+- `JINAGA_POLICIES_WATCH`: Set to `true` to hot-reload policy files. When enabled, the replicator watches the `JINAGA_POLICIES` directory and rebuilds its rules whenever a `.policy` file is added, changed, or removed — no restart required. Subsequent requests enforce the new rules while in-flight requests finish against the old ones. If a changed file fails to parse, the currently loaded rules are kept and the error is logged. Default is `false`.
 - `JINAGA_AUTHENTICATION`: The path to the directory where the replicator will look for authentication provider files. Default is `authentication`.
 - `JINAGA_SUBSCRIPTIONS`: The path to the directory where the replicator will look for subscription files. Default is `subscriptions`.
 - `OTEL_EXPORTER_OTLP_ENDPOINT`: The OpenTelemetry OTLP endpoint accepting gRPC. If not set, OpenTelemetry will not be enabled.
