@@ -1,5 +1,15 @@
 import * as chokidar from "chokidar";
 import { Trace } from "jinaga";
+import { basename } from "path";
+import { MARKER_FILE_NAME } from "./loadPolicies";
+
+// Only changes to files that affect the loaded rule set should trigger a
+// reload: the .policy files themselves and the no-security-policies marker.
+// This avoids redundant reload cycles from editor swap files, .DS_Store, etc.
+function affectsPolicies(file: string): boolean {
+    const name = basename(file);
+    return name.endsWith('.policy') || name === MARKER_FILE_NAME;
+}
 
 export interface PolicyWatcherOptions {
     // Directory of .policy files to watch (recursively).
@@ -33,6 +43,9 @@ export function watchPolicies({ path, debounceMs = 500, onReload }: PolicyWatche
     let pending = false;
 
     function schedule(event: string, file: string) {
+        if (!affectsPolicies(file)) {
+            return;
+        }
         Trace.info(`Policy file ${event}: ${file}`);
         if (timer) {
             clearTimeout(timer);

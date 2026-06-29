@@ -1,7 +1,6 @@
 import shutdownTelemetry from "./telemetry/initialize";
 
 import express = require("express");
-import { Handler } from "express";
 import * as http from "http";
 import { JinagaServer, JinagaServerInstance } from "jinaga-server";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
@@ -77,30 +76,42 @@ async function initializeReplicator() {
   }
 
   const ruleSet = await loadPolicies(policiesPath);
-  let currentInstance = buildInstance(ruleSet);
+
+  // The active replicator instance plus the disposer for the subscriptions
+  // attached to its fact manager. Reloading rebuilds this and swaps it in.
+  let current: RunningReplicator = { instance: buildInstance(ruleSet), stopSubscriptions: () => { } };
 
   // A stable wrapper is mounted at /jinaga and delegates to the active handler.
-  // Reloading the policies rebuilds the instance and swaps activeHandler so that
+  // Reloading the policies rebuilds the instance and swaps it in so that
   // subsequent requests enforce the new rules; in-flight requests finish against
   // the old handler (eventually consistent).
-  let activeHandler: Handler = currentInstance.handler;
-  app.use('/jinaga', authenticate(configs, allowAnonymous), (req, res, next) => activeHandler(req, res, next));
+  app.use('/jinaga', authenticate(configs, allowAnonymous), (req, res, next) => current.instance.handler(req, res, next));
 
   server.listen(app.get('port'), () => {
-    runSubscriptions(subscriptions, currentInstance.factManager);
+    // Attach subscriptions only once the server is listening. Starting the
+    // watcher here too guarantees the initial subscriptions are running before
+    // any reload can swap the instance, so they are never started twice.
+    current.stopSubscriptions = runSubscriptions(subscriptions, current.instance.factManager);
+
+    if (process.env.JINAGA_POLICIES_WATCH === 'true') {
+      watchPolicies({
+        path: policiesPath,
+        onReload: () => reloadPolicies(policiesPath, buildInstance, subscriptions,
+          () => current,
+          replicator => { current = replicator; })
+      });
+    }
+
     printLogo();
     console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
     console.log('  Press CTRL-C to stop\n');
   });
+}
 
-  if (process.env.JINAGA_POLICIES_WATCH === 'true') {
-    watchPolicies({
-      path: policiesPath,
-      onReload: () => reloadPolicies(policiesPath, buildInstance, subscriptions,
-        () => currentInstance,
-        instance => { activeHandler = instance.handler; currentInstance = instance; })
-    });
-  }
+interface RunningReplicator {
+  instance: JinagaServerInstance;
+  // Stops the subscription observers attached to this instance's fact manager.
+  stopSubscriptions: () => void;
 }
 
 // Re-read the policy directory and atomically swap in a freshly built instance.
@@ -110,8 +121,8 @@ async function reloadPolicies(
   policiesPath: string,
   buildInstance: (ruleSet: RuleSet | undefined) => JinagaServerInstance,
   subscriptions: Awaited<ReturnType<typeof loadSubscriptions>>,
-  getCurrent: () => JinagaServerInstance,
-  setCurrent: (instance: JinagaServerInstance) => void
+  getCurrent: () => RunningReplicator,
+  setCurrent: (replicator: RunningReplicator) => void
 ): Promise<void> {
   let ruleSet: RuleSet | undefined;
   try {
@@ -122,20 +133,22 @@ async function reloadPolicies(
     return;
   }
 
-  const previousInstance = getCurrent();
-  const newInstance = buildInstance(ruleSet);
+  const previous = getCurrent();
+  const instance = buildInstance(ruleSet);
 
   // Subscriptions follow the active instance, so re-attach them to the new
   // fact manager before retiring the old one.
-  runSubscriptions(subscriptions, newInstance.factManager);
+  const stopSubscriptions = runSubscriptions(subscriptions, instance.factManager);
 
-  setCurrent(newInstance);
+  setCurrent({ instance, stopSubscriptions });
   Trace.info('Reloaded security policies.');
 
   // Retire the superseded instance after a grace period so in-flight requests
-  // and its subscriptions wind down before its database pools are closed.
+  // finish first. Its subscription observers are stopped and its database pools
+  // closed, otherwise observers and connections would accumulate on each reload.
   setTimeout(() => {
-    previousInstance.close().catch(error =>
+    previous.stopSubscriptions();
+    previous.instance.close().catch(error =>
       Trace.warn(`Error closing superseded replicator instance: ${error instanceof Error ? error.message : String(error)}`));
   }, RELOAD_GRACE_MS).unref();
 }

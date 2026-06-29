@@ -4,7 +4,7 @@ import * as iconv from "iconv-lite";
 import { RuleSet, Trace } from "jinaga";
 import { join } from "path";
 
-const MARKER_FILE_NAME = "no-security-policies";
+export const MARKER_FILE_NAME = "no-security-policies";
 
 export async function loadPolicies(path: string): Promise<RuleSet | undefined> {
     Trace.info(`Searching for security policies in ${path}`);
