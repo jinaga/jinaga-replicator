@@ -1,6 +1,6 @@
 {
   "name": "jinaga-replicator",
-  "version": "3.6.0",
+  "version": "3.6.2",
   "description": "A unit of fact storage and distribution within a Jinaga network",
   "main": "dist/index.js",
   "scripts": {
@@ -26,9 +26,10 @@
     "@opentelemetry/sdk-trace-node": "^1.30.1",
     "chardet": "^2.0.0",
     "express": "^4.21.2",
-    "jinaga": "^6.8.1",
+    "jinaga": "^6.8.3",
     "jinaga-server": "^3.6.0",
     "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.2.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
