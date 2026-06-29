@@ -33,7 +33,7 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 
 ### Key modules
 
-- **`authenticate.ts`** — Builds a JWT authentication function for `JinagaServer`. Reads `.authentication` files (one per provider); each file contains a public key (RSA/symmetric) plus optional `iss`/`aud` constraints. Supports anonymous access if `allow-anonymous` marker file is present.
+- **`authenticate.ts`** — Builds a JWT authentication function for `JinagaServer`. Reads `.provider` files (one per provider); each file matches on `iss`/`aud` and resolves the signing key either from a static `key`/`key_id` (RSA PEM or symmetric secret) or dynamically from a `jwks_uri` endpoint by the token's `kid` (with caching and cache-miss refetch via `jwks-rsa`, supporting RS256 key rotation). Verification is async (awaited) and constrained by an explicit algorithm allowlist (RS256 for asymmetric/JWKS keys, HMAC family for symmetric keys). Supports anonymous access if `allow-anonymous` marker file is present.
 
 - **`loadPolicies.ts`** — Reads `.policy` files containing Jinaga authorization, distribution, and purge rules. Merges them into a single `RuleSet` for `JinagaServer`. Security is bypassed entirely if `no-security-policies` marker file is present.
 
