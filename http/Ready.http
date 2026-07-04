@@ -1,0 +1,3 @@
+### Readiness probe — reports whether the replicator can serve traffic.
+### Returns 200 once initialized and PostgreSQL is reachable, 503 otherwise.
+GET {{baseUrl}}/ready

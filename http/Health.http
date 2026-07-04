@@ -1,0 +1,3 @@
+### Liveness probe — reports that the replicator process is alive.
+### Returns 200 without checking any external dependency.
+GET {{baseUrl}}/health

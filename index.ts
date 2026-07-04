@@ -5,6 +5,7 @@ import * as http from "http";
 import { JinagaServer } from "jinaga-server";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
+import { initializeHealthCheck, livenessHandler, readinessHandler, setReady, shutdownHealthCheck } from "./health";
 import { loadPolicies } from "./loadPolicies";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import { startTracer } from "./telemetry/tracer";
@@ -15,12 +16,14 @@ startTracer();
 
 process.on('SIGINT', async () => {
   console.log("\n\nStopping replicator\n");
+  await shutdownHealthCheck();
   await shutdownTelemetry();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log("\n\nStopping replicator\n");
+  await shutdownHealthCheck();
   await shutdownTelemetry();
   process.exit(0);
 });
@@ -47,6 +50,13 @@ app.set('port', process.env.PORT || 8080);
 app.use(express.json());
 app.use(express.text());
 
+// Health and readiness endpoints are registered before initialization so that
+// orchestrators can probe the replicator throughout startup. Liveness reports
+// the process is alive immediately; readiness stays 503 until initialization
+// completes and PostgreSQL is reachable.
+app.get('/health', livenessHandler);
+app.get('/ready', readinessHandler);
+
 async function initializeReplicator() {
   const pgConnection = process.env.JINAGA_POSTGRESQL ||
     'postgresql://repl:replpw@localhost:5432/replicator';
@@ -56,6 +66,8 @@ async function initializeReplicator() {
   const ruleSet = await loadPolicies(policiesPath);
   const { configs, allowAnonymous } = await loadAuthenticationConfigurations(authenticationPath);
   const subscriptions = await loadSubscriptions(subscriptionPath);
+
+  initializeHealthCheck(pgConnection);
 
   const upstreamReplicators = findUpstreamReplicators();
 
@@ -72,6 +84,7 @@ async function initializeReplicator() {
 
   server.listen(app.get('port'), () => {
     runSubscriptions(subscriptions, factManager);
+    setReady(true);
     printLogo();
     console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
     console.log('  Press CTRL-C to stop\n');
