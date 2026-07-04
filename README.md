@@ -311,7 +311,16 @@ Content-Type: application/json
 { "status": "ready" }
 ```
 
-Not ready (still initializing, or PostgreSQL unavailable):
+Not ready — the `reason` distinguishes the two cases. While the replicator is still starting up:
+
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{ "status": "not ready", "reason": "initializing" }
+```
+
+Once initialized, when PostgreSQL cannot be reached:
 
 ```
 HTTP/1.1 503 Service Unavailable

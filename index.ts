@@ -50,10 +50,10 @@ app.set('port', process.env.PORT || 8080);
 app.use(express.json());
 app.use(express.text());
 
-// Health and readiness endpoints are registered before initialization so that
-// orchestrators can probe the replicator throughout startup. Liveness reports
-// the process is alive immediately; readiness stays 503 until initialization
-// completes and PostgreSQL is reachable.
+// Health and readiness endpoints are registered before the server starts
+// listening so that orchestrators can probe the replicator throughout startup.
+// Liveness reports the process is alive immediately; readiness stays 503 until
+// initialization completes and PostgreSQL is reachable.
 app.get('/health', livenessHandler);
 app.get('/ready', readinessHandler);
 
@@ -66,8 +66,6 @@ async function initializeReplicator() {
   const ruleSet = await loadPolicies(policiesPath);
   const { configs, allowAnonymous } = await loadAuthenticationConfigurations(authenticationPath);
   const subscriptions = await loadSubscriptions(subscriptionPath);
-
-  initializeHealthCheck(pgConnection);
 
   const upstreamReplicators = findUpstreamReplicators();
 
@@ -82,14 +80,23 @@ async function initializeReplicator() {
 
   app.use('/jinaga', authenticate(configs, allowAnonymous), handler);
 
-  server.listen(app.get('port'), () => {
-    runSubscriptions(subscriptions, factManager);
-    setReady(true);
-    printLogo();
-    console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
-    console.log('  Press CTRL-C to stop\n');
-  });
+  runSubscriptions(subscriptions, factManager);
+
+  // Only open the readiness pool and mark the replicator ready once
+  // initialization has fully succeeded. If any step above throws, the pool is
+  // never created (so it can't leak) and /ready keeps reporting "initializing".
+  initializeHealthCheck(pgConnection);
+  setReady(true);
 }
+
+// Start listening immediately so that /health and /ready are reachable for the
+// entire startup window. Initialization then runs in the background; /jinaga is
+// mounted and readiness flips to 200 only once it completes.
+server.listen(app.get('port'), () => {
+  printLogo();
+  console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
+  console.log('  Press CTRL-C to stop\n');
+});
 
 initializeReplicator()
   .catch((error) => {
