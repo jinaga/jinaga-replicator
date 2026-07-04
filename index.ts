@@ -7,7 +7,7 @@ import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
 import { loadPolicies } from "./loadPolicies";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
-import { watchPolicies } from "./watchPolicies";
+import { createPolicyReloader } from "./policyReloader";
 import { startTracer } from "./telemetry/tracer";
 import process = require("process");
 import { RuleSet, Trace } from "jinaga";
@@ -81,27 +81,34 @@ async function initializeReplicator() {
   // attached to its fact manager. Reloading rebuilds this and swaps it in.
   let current: RunningReplicator = { instance: buildInstance(ruleSet), stopSubscriptions: () => { } };
 
+  // When hot-reload is enabled, each request cheaply checks whether the policy
+  // files on disk have changed (by stat, so it works over network mounts where
+  // filesystem-change events are not delivered) and rebuilds in the background
+  // if so. A stat-on-read check adds no poll loop while idle and needs no
+  // cross-replica coordination. Default off, so production behavior is unchanged.
+  const checkForPolicyChanges = process.env.JINAGA_POLICIES_WATCH === 'true'
+    ? await createPolicyReloader({
+        path: policiesPath,
+        onChange: () => reloadPolicies(policiesPath, buildInstance, subscriptions,
+          () => current,
+          replicator => { current = replicator; })
+      })
+    : undefined;
+
   // A stable wrapper is mounted at /jinaga and delegates to the active handler.
   // Reloading the policies rebuilds the instance and swaps it in so that
   // subsequent requests enforce the new rules; in-flight requests finish against
   // the old handler (eventually consistent).
-  app.use('/jinaga', authenticate(configs, allowAnonymous), (req, res, next) => current.instance.handler(req, res, next));
+  app.use('/jinaga', authenticate(configs, allowAnonymous), (req, res, next) => {
+    checkForPolicyChanges?.();
+    current.instance.handler(req, res, next);
+  });
 
   server.listen(app.get('port'), () => {
-    // Attach subscriptions only once the server is listening. Starting the
-    // watcher here too guarantees the initial subscriptions are running before
-    // any reload can swap the instance, so they are never started twice.
+    // Attach subscriptions only once the server is listening. A reload can only
+    // be triggered by an incoming request, which cannot be handled before this
+    // callback runs, so the initial subscriptions are never started twice.
     current.stopSubscriptions = runSubscriptions(subscriptions, current.instance.factManager);
-
-    if (process.env.JINAGA_POLICIES_WATCH === 'true') {
-      watchPolicies({
-        path: policiesPath,
-        onReload: () => reloadPolicies(policiesPath, buildInstance, subscriptions,
-          () => current,
-          replicator => { current = replicator; })
-      });
-    }
-
     printLogo();
     console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
     console.log('  Press CTRL-C to stop\n');
