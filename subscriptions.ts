@@ -16,10 +16,16 @@ export async function loadSubscriptions(path: string): Promise<Subscription[]> {
     return subscriptionArrays.flat();
 }
 
-export function runSubscriptions(subscriptions: Subscription[], factManager: FactManager) {
-    for (const subscription of subscriptions) {
-        runSubscription(subscription, factManager);
-    }
+// Start an observer for each subscription against the given fact manager and
+// return a disposer that stops them all. The caller is responsible for invoking
+// the disposer when the fact manager is retired, otherwise observers accumulate.
+export function runSubscriptions(subscriptions: Subscription[], factManager: FactManager): () => void {
+    const observers = subscriptions.map(subscription => runSubscription(subscription, factManager));
+    return () => {
+        for (const observer of observers) {
+            observer.stop();
+        }
+    };
 }
 
 function runSubscription(subscription: Subscription, factManager: FactManager) {
@@ -27,6 +33,7 @@ function runSubscription(subscription: Subscription, factManager: FactManager) {
     observer.loaded().catch(error => {
         Trace.error(`Error running subscription: ${error}`);
     });
+    return observer;
 }
 
 async function findSubscriptionFiles(dir: string): Promise<string[]> {
