@@ -5,6 +5,7 @@ import * as http from "http";
 import { JinagaServer, JinagaServerInstance } from "jinaga-server";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
+import { initializeHealthCheck, livenessHandler, readinessHandler, setReady, shutdownHealthCheck } from "./health";
 import { loadPolicies } from "./loadPolicies";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import { createPolicyReloader } from "./policyReloader";
@@ -21,12 +22,14 @@ startTracer();
 
 process.on('SIGINT', async () => {
   console.log("\n\nStopping replicator\n");
+  await shutdownHealthCheck();
   await shutdownTelemetry();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log("\n\nStopping replicator\n");
+  await shutdownHealthCheck();
   await shutdownTelemetry();
   process.exit(0);
 });
@@ -52,6 +55,13 @@ process.on('unhandledRejection', (reason, promise) => {
 app.set('port', process.env.PORT || 8080);
 app.use(express.json());
 app.use(express.text());
+
+// Health and readiness endpoints are registered before the server starts
+// listening so that orchestrators can probe the replicator throughout startup.
+// Liveness reports the process is alive immediately; readiness stays 503 until
+// initialization completes and PostgreSQL is reachable.
+app.get('/health', livenessHandler);
+app.get('/ready', readinessHandler);
 
 async function initializeReplicator() {
   const pgConnection = process.env.JINAGA_POSTGRESQL ||
@@ -81,6 +91,12 @@ async function initializeReplicator() {
   // attached to its fact manager. Reloading rebuilds this and swaps it in.
   let current: RunningReplicator = { instance: buildInstance(ruleSet), stopSubscriptions: () => { } };
 
+  // Attach the initial subscriptions before mounting /jinaga. In the
+  // listen-first model the server is already accepting connections, so mounting
+  // /jinaga is what first makes a policy reload reachable; attaching here keeps
+  // the initial subscriptions from ever being started twice.
+  current.stopSubscriptions = runSubscriptions(subscriptions, current.instance.factManager);
+
   // When hot-reload is enabled, each request cheaply checks whether the policy
   // files on disk have changed (by stat, so it works over network mounts where
   // filesystem-change events are not delivered) and rebuilds in the background
@@ -104,15 +120,11 @@ async function initializeReplicator() {
     current.instance.handler(req, res, next);
   });
 
-  server.listen(app.get('port'), () => {
-    // Attach subscriptions only once the server is listening. A reload can only
-    // be triggered by an incoming request, which cannot be handled before this
-    // callback runs, so the initial subscriptions are never started twice.
-    current.stopSubscriptions = runSubscriptions(subscriptions, current.instance.factManager);
-    printLogo();
-    console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
-    console.log('  Press CTRL-C to stop\n');
-  });
+  // Only open the readiness pool and mark the replicator ready once
+  // initialization has fully succeeded. If any step above throws, the pool is
+  // never created (so it can't leak) and /ready keeps reporting "initializing".
+  initializeHealthCheck(pgConnection);
+  setReady(true);
 }
 
 interface RunningReplicator {
@@ -159,6 +171,15 @@ async function reloadPolicies(
       Trace.warn(`Error closing superseded replicator instance: ${error instanceof Error ? error.message : String(error)}`));
   }, RELOAD_GRACE_MS).unref();
 }
+
+// Start listening immediately so that /health and /ready are reachable for the
+// entire startup window. Initialization then runs in the background; /jinaga is
+// mounted and readiness flips to 200 only once it completes.
+server.listen(app.get('port'), () => {
+  printLogo();
+  console.log(`  Replicator is running at http://localhost:${app.get('port')} in ${app.get('env')} mode`);
+  console.log('  Press CTRL-C to stop\n');
+});
 
 initializeReplicator()
   .catch((error) => {

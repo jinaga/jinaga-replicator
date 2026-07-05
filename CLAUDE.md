@@ -43,6 +43,8 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 
 - **`findUpstreamReplicators.ts`** — Discovers upstream replicator URLs from `REPLICATOR_UPSTREAM_1`, `REPLICATOR_UPSTREAM_2`, … env vars.
 
+- **`health.ts`** — Provides unauthenticated `/health` (liveness) and `/ready` (readiness) endpoints. Liveness always returns 200 and performs no dependency checks (so a database outage can't trigger a container restart). Readiness returns 503 until initialization completes, then verifies PostgreSQL connectivity (`SELECT 1` via a dedicated single-connection pool) on each probe. Both are registered before async initialization so they respond throughout startup. The Dockerfile's `HEALTHCHECK` probes `/health`.
+
 - **`telemetry/`** — OpenTelemetry SDK setup. Activates gRPC OTLP exporters when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; falls back to console output otherwise.
 
 ### Configuration (environment variables)

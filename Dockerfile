@@ -50,4 +50,11 @@ VOLUME /var/lib/replicator/subscriptions
 
 ENV JINAGA_SUBSCRIPTIONS=/var/lib/replicator/subscriptions
 
+# Liveness check for the container runtime. Uses the /health endpoint, which
+# reports only that the process is alive and never depends on PostgreSQL, so a
+# transient database outage cannot trigger a restart. Orchestrators should probe
+# /ready separately to decide whether to route traffic.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget --quiet --tries=1 --spider "http://localhost:${PORT:-8080}/health" || exit 1
+
 ENTRYPOINT [ "start.sh" ]

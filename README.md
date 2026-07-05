@@ -281,6 +281,75 @@ docker run -d --name my-replicator -p8080:8080 -v /path/to/your/subscriptions:/v
 
 Replace `/path/to/your/subscriptions` with the path to the directory on your host machine that contains your subscription files.
 
+## Health and Readiness
+
+The Jinaga Replicator exposes two unauthenticated endpoints for use by container runtimes and orchestrators. They follow the standard [liveness versus readiness](https://kubernetes.io/docs/concepts/workloads/pods/probes/) distinction: liveness decides whether to restart the container, while readiness decides whether to route traffic to it.
+
+### `GET /health` — Liveness
+
+Reports that the replicator process is alive and able to serve HTTP. It intentionally performs **no** dependency checks, so a transient PostgreSQL outage never causes the container to be restarted. It responds immediately, even while the replicator is still initializing.
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{ "status": "ok" }
+```
+
+Use this endpoint for a container runtime health check (Docker `HEALTHCHECK`) or a Kubernetes liveness probe.
+
+### `GET /ready` — Readiness
+
+Reports whether the replicator can serve traffic right now. It returns `503 Service Unavailable` until initialization has completed, and thereafter verifies that PostgreSQL is reachable on every probe.
+
+Ready:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{ "status": "ready" }
+```
+
+Not ready — the `reason` distinguishes the two cases. While the replicator is still starting up:
+
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{ "status": "not ready", "reason": "initializing" }
+```
+
+Once initialized, when PostgreSQL cannot be reached:
+
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{ "status": "not ready", "reason": "database unavailable" }
+```
+
+Use this endpoint for a Kubernetes readiness probe or a load balancer health check.
+
+### Container health check
+
+The published Docker image declares a `HEALTHCHECK` that probes `/health` on the configured `PORT`. Kubernetes deployments should additionally configure a readiness probe against `/ready`:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 30
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+```
+
 ## Configuration
 
 The Jinaga Replicator can be configured using environment variables. Below are the available configuration options:
