@@ -37,6 +37,8 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 
 - **`loadPolicies.ts`** — Reads `.policy` files containing Jinaga authorization, distribution, and purge rules. Merges them into a single `RuleSet` for `JinagaServer`. Security is bypassed entirely if `no-security-policies` marker file is present.
 
+- **`policyReloader.ts`** — Optional (`JINAGA_POLICIES_WATCH=true`) lazy hot-reload of policies. Rather than a background filesystem watcher, it exposes a cheap `checkForChanges()` that the `/jinaga` wrapper calls per request: it fingerprints the `.policy` files and the `no-security-policies` marker by size + mtime (via `stat`, so it works over network mounts like SMB/NFS where inotify events are not delivered, with no idle poll loop) and, when the fingerprint changes, triggers a background reload. The reload re-runs `loadPolicies`, rebuilds a `JinagaServer` instance from the new rules, re-attaches subscriptions, and atomically swaps the instance delegated to from `/jinaga` (in-flight requests finish against the old instance, whose subscriptions are stopped and pools closed after a grace period). A parse failure keeps the current rules and logs a warning rather than crashing.
+
 - **`subscriptions.ts`** — Reads `.subscription` files (Jinaga specification syntax), starts observers against upstream replicators to pull matching facts into the local store.
 
 - **`findUpstreamReplicators.ts`** — Discovers upstream replicator URLs from `REPLICATOR_UPSTREAM_1`, `REPLICATOR_UPSTREAM_2`, … env vars.
@@ -50,6 +52,7 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 | `PORT` | HTTP port (default 8080) |
 | `JINAGA_POSTGRESQL` | PostgreSQL connection string |
 | `JINAGA_POLICIES` | Path to directory of `.policy` files |
+| `JINAGA_POLICIES_WATCH` | Set to `true` to hot-reload `.policy` files without a restart, via a per-request `stat`-based staleness check (default off) |
 | `JINAGA_AUTHENTICATION` | Path to directory of `.authentication` files |
 | `JINAGA_SUBSCRIPTIONS` | Path to directory of `.subscription` files |
 | `REPLICATOR_UPSTREAM_N` | Numbered upstream replicator URLs (HTTP/HTTPS) |
