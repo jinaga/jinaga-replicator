@@ -27,7 +27,7 @@
     "chardet": "^2.0.0",
     "express": "^4.21.2",
     "jinaga": "^6.11.1",
-    "jinaga-server": "^3.7.1",
+    "jinaga-server": "^3.7.3",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
     "pg": "^8.13.1"
