@@ -27,13 +27,13 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 2. Load JWT authentication providers from `JINAGA_AUTHENTICATION` directory
 3. Load security policies from `JINAGA_POLICIES` directory
 4. Connect to PostgreSQL via `JINAGA_POSTGRESQL`
-5. Start Express on `PORT` (default 8080), mounting `JinagaServer` (from `jinaga-server`)
+5. Start Express on `PORT` (default 8080), mounting `JinagaServer` (from `jinaga-server`). `/jinaga` is mounted before initialization runs, behind a gate that answers 503 (never 404) until the handler chain is ready
 6. Load subscriptions from `JINAGA_SUBSCRIPTIONS` directory and connect to upstream replicators discovered from `REPLICATOR_UPSTREAM_N` env vars
 7. Register graceful shutdown on SIGINT/SIGTERM
 
 ### Key modules
 
-- **`authenticate.ts`** — Builds a JWT authentication function for `JinagaServer`. Reads `.provider` files (one per provider); each file matches on `iss`/`aud` and resolves the signing key either from a static `key`/`key_id` (RSA PEM or symmetric secret) or dynamically from a `jwks_uri` endpoint by the token's `kid` (with caching and cache-miss refetch via `jwks-rsa`, supporting RS256 key rotation). Verification is async (awaited) and constrained by an explicit algorithm allowlist (RS256 for asymmetric/JWKS keys, HMAC family for symmetric keys). Supports anonymous access if `allow-anonymous` marker file is present.
+- **`authenticate.ts`** — Builds a JWT authentication function for `JinagaServer`. Reads `.provider` files (one per provider); each file matches on `iss`/`aud` and resolves the signing key either from a static `key`/`key_id` (RSA PEM or symmetric secret) or dynamically from a `jwks_uri` endpoint by the token's `kid` (with caching and cache-miss refetch via `jwks-rsa`, supporting RS256 key rotation). Verification is async (awaited) and constrained by an explicit algorithm allowlist (RS256 for asymmetric/JWKS keys, HMAC family for symmetric keys). A JWKS lookup is classified: only jwks-rsa's `SigningKeyNotFoundError` (the endpoint answered, and does not publish that `kid`) is a 401; an unreachable endpoint, non-2xx response, timeout, or rate-limit yields 503 `Authentication provider unavailable` with `Retry-After`, so a valid token during an outage is not reported as a bad token. Supports anonymous access if `allow-anonymous` marker file is present.
 
 - **`loadPolicies.ts`** — Reads `.policy` files containing Jinaga authorization, distribution, and purge rules. Merges them into a single `RuleSet` for `JinagaServer`. Security is bypassed entirely if `no-security-policies` marker file is present.
 
@@ -43,7 +43,7 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 
 - **`findUpstreamReplicators.ts`** — Discovers upstream replicator URLs from `REPLICATOR_UPSTREAM_1`, `REPLICATOR_UPSTREAM_2`, … env vars.
 
-- **`health.ts`** — Provides unauthenticated `/health` (liveness) and `/ready` (readiness) endpoints. Liveness always returns 200 and performs no dependency checks (so a database outage can't trigger a container restart). Readiness returns 503 until initialization completes, then verifies PostgreSQL connectivity (`SELECT 1` via a dedicated single-connection pool) on each probe. Both are registered before async initialization so they respond throughout startup. The Dockerfile's `HEALTHCHECK` probes `/health`.
+- **`health.ts`** — Provides unauthenticated `/health` (liveness) and `/ready` (readiness) endpoints. Liveness always returns 200 and performs no dependency checks (so a database outage can't trigger a container restart). Readiness returns 503 until initialization completes, then verifies PostgreSQL connectivity (`SELECT 1` via a dedicated single-connection pool) on each probe. The not-ready `reason` separates `initializing` from `initialization failed` (recorded by `setInitializationFailed` when the startup catch in `index.ts` fires, since nothing retries) and `database unavailable`. Both are registered before async initialization so they respond throughout startup; `notReadyReason()` is shared with the `/jinaga` gate so a request to a real route gets the same diagnosis as a probe. The Dockerfile's `HEALTHCHECK` probes `/health`.
 
 - **`telemetry/`** — OpenTelemetry SDK setup. Activates gRPC OTLP exporters when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; falls back to console output otherwise.
 

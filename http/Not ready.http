@@ -1,0 +1,15 @@
+### A /jinaga route while the replicator is not yet serving.
+### Expect 503 with a Retry-After header and { "status": "not ready", ... },
+### never a 404 — the route exists even before initialization completes.
+###
+### To exercise the failure case, start the replicator with a configuration
+### directory that does not exist, e.g.
+###   JINAGA_AUTHENTICATION=./no-such-directory npm start
+### and expect reason "initialization failed". During a normal start the same
+### request briefly returns reason "initializing", then succeeds.
+POST {{replicatorUrl}}/read
+Content-Type: text/plain
+
+(u: Jinaga.User) {
+  s: Blog.Site [ s->creator: Jinaga.User = u ]
+} => s

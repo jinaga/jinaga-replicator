@@ -86,10 +86,23 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                         // to that key alone — never a union across providers, which
                         // would reopen the RS256->HS256 confusion an allowlist closes.
                         const resolution = await resolveVerificationKey(header, possibleConfigs);
-                        if (resolution) {
+                        if (resolution.outcome === "unavailable") {
+                            // We could not reach the authority that would have proven
+                            // this token good or bad, so we cannot claim it is bad.
+                            // A 401 here would tell a client with a perfectly valid
+                            // token to go get another one, which will not help.
+                            Trace.warn(`Unable to reach the signing key endpoint for key ID ${header.kid}: ${resolution.error.message}`);
+                            res.set('Access-Control-Allow-Origin', '*');
+                            res.set('Retry-After', '5');
+                            res.status(503).send("Authentication provider unavailable");
+                            return;
+                        }
+                        if (resolution.outcome === "resolved") {
                             verified = await verifyToken(token, resolution.key, resolution.algorithms);
                             provider = resolution.provider;
                         } else {
+                            // The endpoint answered and does not publish this kid, so
+                            // the token really is unverifiable.
                             Trace.warn(`No signing key for key ID: ${header.kid}`);
                         }
                     } catch (error) {
@@ -134,6 +147,20 @@ interface ResolvedVerificationKey {
     provider: string;
 }
 
+// The three distinguishable answers to "which key signs this token?". Folding
+// them together is what makes an outage look like a forged token: "not-found"
+// is the client's problem (401), "unavailable" is ours (503).
+type KeyResolution =
+    | ({ outcome: "resolved" } & ResolvedVerificationKey)
+    | { outcome: "not-found" }
+    | { outcome: "unavailable"; error: Error };
+
+// Likewise for a single JWKS lookup.
+type KeyLookup =
+    | { outcome: "resolved"; key: string }
+    | { outcome: "not-found" }
+    | { outcome: "unavailable"; error: Error };
+
 // Resolve the signing key for a token by its `kid`, supporting both static keys
 // (matched by `key_id`) and dynamic JWKS endpoints (resolved by `kid`, with
 // caching and cache-miss refetch handled by jwks-rsa). Resolution is
@@ -148,17 +175,18 @@ interface ResolvedVerificationKey {
 async function resolveVerificationKey(
     header: JwtHeader,
     possibleConfigs: AuthenticationConfiguration[]
-): Promise<ResolvedVerificationKey | undefined> {
+): Promise<KeyResolution> {
     // A `kid` is required to select a key in both modes; fail fast without one.
     const kid = header.kid;
     if (!kid) {
-        return undefined;
+        return { outcome: "not-found" };
     }
 
     // Prefer a static key whose key_id matches the token's kid.
     const staticConfig = possibleConfigs.find(config => config.key !== undefined && config.keyId === kid);
     if (staticConfig && staticConfig.key !== undefined) {
         return {
+            outcome: "resolved",
             key: staticConfig.key,
             algorithms: isPemKey(staticConfig.key) ? RSA_ALGORITHMS : HMAC_ALGORITHMS,
             provider: staticConfig.provider
@@ -169,28 +197,66 @@ async function resolveVerificationKey(
     // than blindly taking the first) disambiguates when more than one JWKS
     // provider shares the issuer/audience: the one that actually publishes the
     // kid wins.
+    //
+    // An unreachable endpoint does not stop the search — a later provider may
+    // publish the kid, and a reachable "yes" beats an unreachable "don't know".
+    // The failure is only reported if no provider produced a key, in which case
+    // we genuinely do not know whether the token is good.
+    let unavailable: Error | undefined;
     for (const config of possibleConfigs) {
         if (config.jwksClient) {
-            const key = await getSigningKey(config.jwksClient, kid);
-            if (key) {
+            const lookup = await getSigningKey(config.jwksClient, kid);
+            if (lookup.outcome === "resolved") {
                 return {
-                    key,
+                    outcome: "resolved",
+                    key: lookup.key,
                     algorithms: RSA_ALGORITHMS,
                     provider: config.provider
                 };
             }
+            if (lookup.outcome === "unavailable") {
+                unavailable = unavailable ?? lookup.error;
+            }
         }
     }
 
-    return undefined;
+    return unavailable ? { outcome: "unavailable", error: unavailable } : { outcome: "not-found" };
 }
 
-// Promisified jwks-rsa key lookup. Resolves to the PEM public key for the kid,
-// or undefined if the endpoint does not publish it (or the fetch fails).
-function getSigningKey(client: jwksRsa.JwksClient, kid: string): Promise<string | undefined> {
+// Promisified jwks-rsa key lookup, distinguishing "this endpoint does not
+// publish that kid" from "we could not ask it."
+//
+// Only SigningKeyNotFoundError means the endpoint answered and the kid is not
+// among its keys. Every other failure — JwksError (non-2xx response, empty key
+// set), JwksRateLimitError, a socket error, a malformed JSON body — means the
+// question went unanswered. Classifying by `name` rather than `instanceof`
+// keeps a second copy of jwks-rsa in the dependency tree from turning an
+// unanswered question into a confident 401; the safe default for an
+// unrecognized error is "unavailable", never "not found".
+function getSigningKey(client: jwksRsa.JwksClient, kid: string): Promise<KeyLookup> {
     return new Promise(resolve => {
         client.getSigningKey(kid, (error, key) => {
-            resolve(error || !key ? undefined : key.getPublicKey());
+            if (error) {
+                resolve(error.name === "SigningKeyNotFoundError"
+                    ? { outcome: "not-found" }
+                    : { outcome: "unavailable", error });
+                return;
+            }
+            if (!key) {
+                resolve({ outcome: "not-found" });
+                return;
+            }
+            try {
+                resolve({ outcome: "resolved", key: key.getPublicKey() });
+            } catch (conversionError) {
+                // The endpoint published a key we cannot turn into PEM. That is
+                // the provider's problem, not the caller's, and it would
+                // otherwise escape this callback as an unhandled rejection.
+                resolve({
+                    outcome: "unavailable",
+                    error: conversionError instanceof Error ? conversionError : new Error(String(conversionError))
+                });
+            }
         });
     });
 }

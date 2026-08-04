@@ -5,7 +5,7 @@ import * as http from "http";
 import { JinagaServer, JinagaServerInstance } from "jinaga-server";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
-import { initializeHealthCheck, livenessHandler, readinessHandler, setReady, shutdownHealthCheck } from "./health";
+import { initializeHealthCheck, livenessHandler, notReadyReason, readinessHandler, setInitializationFailed, setReady, shutdownHealthCheck } from "./health";
 import { loadPolicies } from "./loadPolicies";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import { createPolicyReloader } from "./policyReloader";
@@ -48,8 +48,14 @@ server.on('clientError', (err: Error & { code?: string }, socket) => {
     socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
   }
 });
+// A rejection that escapes a handler is logged rather than fatal: exiting here
+// would turn one stray promise into a container restart loop. Re-wrapping an
+// Error would discard its stack, so the original is reported as-is when there
+// is one, and only a non-Error reason is wrapped for Trace.error.
 process.on('unhandledRejection', (reason, promise) => {
-  Trace.error(new Error(`Unhandled Rejection at: ${promise}, reason: ${reason}`));
+  Trace.error(reason instanceof Error
+    ? reason
+    : new Error(`Unhandled Rejection at: ${promise}, reason: ${reason}`));
 });
 
 app.set('port', process.env.PORT || 8080);
@@ -62,6 +68,41 @@ app.use(express.text());
 // initialization completes and PostgreSQL is reachable.
 app.get('/health', livenessHandler);
 app.get('/ready', readinessHandler);
+
+// The handler chain that serves /jinaga, assigned once initialization succeeds.
+// It is composed rather than mounted so that the route itself exists from the
+// moment the server starts listening.
+let jinagaHandler: express.RequestHandler | undefined;
+
+// /jinaga is mounted up front, before initialization has had a chance to fail.
+// Registering the route only after initialization would leave Express answering
+// 404 "Cannot POST /jinaga/save" for the entire startup window and forever after
+// a failed start, which a caller cannot distinguish from a URL typo or a routing
+// mistake. Answering 503 with the same body /ready reports says instead: this
+// endpoint is real, it just isn't serving yet, and here is why.
+app.use('/jinaga', (req, res, next) => {
+  const handler = jinagaHandler;
+  if (!handler) {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Retry-After', '5');
+    res.status(503).json({ status: "not ready", reason: notReadyReason() });
+    return;
+  }
+  handler(req, res, next);
+});
+
+// Errors passed to next() land here. Express's default handler would put the
+// stack trace in the response body whenever NODE_ENV is not "production", so
+// this replaces it with a fixed string and keeps the detail server-side.
+app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  Trace.error(error instanceof Error ? error : new Error(String(error)));
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+  res.set('Access-Control-Allow-Origin', '*');
+  res.status(500).send("Internal server error");
+});
 
 async function initializeReplicator() {
   const pgConnection = process.env.JINAGA_POSTGRESQL ||
@@ -111,14 +152,26 @@ async function initializeReplicator() {
       })
     : undefined;
 
-  // A stable wrapper is mounted at /jinaga and delegates to the active handler.
+  // A stable wrapper serves /jinaga and delegates to the active handler.
   // Reloading the policies rebuilds the instance and swaps it in so that
   // subsequent requests enforce the new rules; in-flight requests finish against
   // the old handler (eventually consistent).
-  app.use('/jinaga', authenticate(configs, allowAnonymous), (req, res, next) => {
-    checkForPolicyChanges?.();
-    current.instance.handler(req, res, next);
-  });
+  //
+  // Authentication and delegation are composed into a single handler so that the
+  // gate mounted at /jinaga can adopt the whole chain in one assignment: a
+  // request either sees the fully initialized chain or the 503, never a
+  // half-attached one.
+  const authenticateRequest = authenticate(configs, allowAnonymous);
+  jinagaHandler = (req, res, next) => {
+    authenticateRequest(req, res, error => {
+      if (error) {
+        next(error);
+        return;
+      }
+      checkForPolicyChanges?.();
+      current.instance.handler(req, res, next);
+    });
+  };
 
   // Only open the readiness pool and mark the replicator ready once
   // initialization has fully succeeded. If any step above throws, the pool is
@@ -185,6 +238,10 @@ initializeReplicator()
   .catch((error) => {
     printError();
     console.error("Error initializing replicator.", error);
+    // Nothing retries initialization, so record the failure: /ready and /jinaga
+    // both report "initialization failed" from here on, rather than claiming to
+    // still be starting up.
+    setInitializationFailed();
   });
 
 function printLogo() {

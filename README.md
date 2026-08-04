@@ -124,6 +124,19 @@ touch /var/lib/replicator/authentication/allow-anonymous
 
 A user will be permitted to access the replicator without a bearer token if the `allow-anonymous` file is present. Authorization and distribution rules will still apply. The user will only be able to write facts with the `any` authorization rule, and can only read feeds shared with `everyone`.
 
+### Authentication Responses
+
+A rejected request distinguishes a problem with the token from a problem on the replicator's side, so that a client knows whether to re-authenticate or to retry.
+
+| Status | Body | Meaning |
+|---|---|---|
+| `401 Unauthorized` | `No token` | No bearer token was presented, and anonymous access is not allowed. |
+| `401 Unauthorized` | `Invalid token`, `Invalid subject`, `Invalid issuer`, `Invalid audience` | The token is malformed, or its claims match no configured provider. |
+| `401 Unauthorized` | `Invalid signature` | The signature did not verify, or no configured provider publishes the token's `kid`. |
+| `503 Service Unavailable` | `Authentication provider unavailable` | A `jwks_uri` endpoint could not be reached, so the token could be neither proven nor disproven. |
+
+The `503` carries a `Retry-After` header. It means the replicator could not reach the authority that publishes the signing keys — a network failure, a timeout, or a non-2xx response from the JWKS endpoint — not that the token is bad. A client should retry rather than discard an otherwise valid token. A `kid` that the JWKS endpoint answers for but does not publish is a genuine `401`, since the endpoint was reachable and gave a definitive answer.
+
 ## Security Policies
 
 Policies determine who is authorized to write facts, and to whom to distribute facts.
@@ -311,13 +324,22 @@ Content-Type: application/json
 { "status": "ready" }
 ```
 
-Not ready — the `reason` distinguishes the two cases. While the replicator is still starting up:
+Not ready — the `reason` distinguishes the three cases. While the replicator is still starting up:
 
 ```
 HTTP/1.1 503 Service Unavailable
 Content-Type: application/json
 
 { "status": "not ready", "reason": "initializing" }
+```
+
+When initialization failed and will not be retried — a malformed `.policy` or `.provider` file, a missing configuration directory, an unusable PostgreSQL connection string. The replicator will stay in this state until it is reconfigured and restarted; the cause is written to the container log:
+
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{ "status": "not ready", "reason": "initialization failed" }
 ```
 
 Once initialized, when PostgreSQL cannot be reached:
@@ -330,6 +352,20 @@ Content-Type: application/json
 ```
 
 Use this endpoint for a Kubernetes readiness probe or a load balancer health check.
+
+### `/jinaga/*` before the replicator is ready
+
+The `/jinaga` routes are mounted as soon as the server starts listening, before initialization has had a chance to succeed or fail. Until the replicator is serving, they answer `503 Service Unavailable` with a `Retry-After` header and the same body `/ready` reports:
+
+```
+HTTP/1.1 503 Service Unavailable
+Retry-After: 5
+Content-Type: application/json
+
+{ "status": "not ready", "reason": "initialization failed" }
+```
+
+This is deliberate: a `404` here would be indistinguishable from a URL typo or a routing misconfiguration, leaving a caller to debug their own request when the replicator is the thing that is broken. A `404` from a replicator therefore always means the route does not exist, never that the replicator is not ready.
 
 ### Container health check
 

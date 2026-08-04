@@ -13,6 +13,7 @@ import { Pool } from "pg";
 // orchestrator removes the pod from rotation without restarting it.
 
 let ready = false;
+let initializationFailed = false;
 let healthPool: Pool | null = null;
 
 export function initializeHealthCheck(connectionString: string): void {
@@ -34,13 +35,28 @@ export function setReady(value: boolean): void {
   ready = value;
 }
 
+// Records that initialization threw and will not be retried. Readiness stays
+// 503 either way, but the reason separates "still starting up, wait" from
+// "misconfigured, a human has to fix it and restart" — the two are otherwise
+// indistinguishable from outside the container, since both report "initializing"
+// forever.
+export function setInitializationFailed(): void {
+  initializationFailed = true;
+}
+
+// The reason reported while the replicator is not yet serving. Shared with the
+// /jinaga gate so a request to a real route gets the same diagnosis as a probe.
+export function notReadyReason(): string {
+  return initializationFailed ? "initialization failed" : "initializing";
+}
+
 export function livenessHandler(_req: Request, res: Response): void {
   res.status(200).json({ status: "ok" });
 }
 
 export async function readinessHandler(_req: Request, res: Response): Promise<void> {
   if (!ready || !healthPool) {
-    res.status(503).json({ status: "not ready", reason: "initializing" });
+    res.status(503).json({ status: "not ready", reason: notReadyReason() });
     return;
   }
   try {
