@@ -27,6 +27,21 @@ function isPemKey(key: string): boolean {
     return /-----BEGIN (?:[A-Z0-9]+ )*(?:PUBLIC KEY|CERTIFICATE)-----/.test(key);
 }
 
+// Send an authentication failure. Express infers text/html from res.send of a
+// string, which labels a diagnostic as markup, so the type is set explicitly and
+// sniffing is disabled — the same treatment jinaga-server 3.7.5 gave its own
+// error bodies. Unlike those, every message here is a fixed literal with no
+// client-supplied text in it, so there is nothing to escape.
+function sendAuthenticationError(res: Response, status: number, message: string, retryAfterSeconds?: number): void {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('X-Content-Type-Options', 'nosniff');
+    if (retryAfterSeconds !== undefined) {
+        res.set('Retry-After', String(retryAfterSeconds));
+    }
+    res.type("text");
+    res.status(status).send(message);
+}
+
 export function authenticate(configs: AuthenticationConfiguration[], allowAnonymous: boolean) {
     return async (req: Request, res: Response, next: NextFunction) => {
         let possibleConfigs: AuthenticationConfiguration[] = configs;
@@ -44,8 +59,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     const decoded = decode(token, { complete: true });
                     const payload = decoded?.payload;
                     if (!decoded || !payload || typeof payload !== "object") {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid token");
+                        sendAuthenticationError(res, 401, "Invalid token");
                         Trace.warn(`Invalid token: ${payload}`);
                         return;
                     }
@@ -54,8 +68,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     // Validate the subject.
                     const subject = payload.sub;
                     if (typeof subject !== "string") {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid subject");
+                        sendAuthenticationError(res, 401, "Invalid subject");
                         Trace.warn(`Invalid subject: ${subject}`);
                         return;
                     }
@@ -64,16 +77,14 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     const issuer = payload.iss;
                     possibleConfigs = configs.filter(config => config.issuer === issuer);
                     if (possibleConfigs.length === 0) {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid issuer");
+                        sendAuthenticationError(res, 401, "Invalid issuer");
                         Trace.warn(`Invalid issuer: ${issuer}`);
                         return;
                     }
                     const audience = payload.aud;
                     possibleConfigs = possibleConfigs.filter(config => config.audience === audience);
                     if (possibleConfigs.length === 0) {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid audience");
+                        sendAuthenticationError(res, 401, "Invalid audience");
                         Trace.warn(`Invalid audience: ${audience}`);
                         return;
                     }
@@ -86,10 +97,21 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                         // to that key alone — never a union across providers, which
                         // would reopen the RS256->HS256 confusion an allowlist closes.
                         const resolution = await resolveVerificationKey(header, possibleConfigs);
-                        if (resolution) {
+                        if (resolution.outcome === "unavailable") {
+                            // We could not reach the authority that would have proven
+                            // this token good or bad, so we cannot claim it is bad.
+                            // A 401 here would tell a client with a perfectly valid
+                            // token to go get another one, which will not help.
+                            Trace.warn(`Unable to reach the signing key endpoint for key ID ${header.kid}: ${resolution.error.message}`);
+                            sendAuthenticationError(res, 503, "Authentication provider unavailable", 5);
+                            return;
+                        }
+                        if (resolution.outcome === "resolved") {
                             verified = await verifyToken(token, resolution.key, resolution.algorithms);
                             provider = resolution.provider;
                         } else {
+                            // The endpoint answered and does not publish this kid, so
+                            // the token really is unverifiable.
                             Trace.warn(`No signing key for key ID: ${header.kid}`);
                         }
                     } catch (error) {
@@ -97,8 +119,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     }
 
                     if (!verified) {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid signature");
+                        sendAuthenticationError(res, 401, "Invalid signature");
                         Trace.warn(`Invalid signature`);
                         return;
                     }
@@ -115,8 +136,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                 }
             }
             else if (!allowAnonymous) {
-                res.set('Access-Control-Allow-Origin', '*');
-                res.status(401).send("No token");
+                sendAuthenticationError(res, 401, "No token");
                 Trace.warn("No access token provided");
                 return;
             }
@@ -134,6 +154,20 @@ interface ResolvedVerificationKey {
     provider: string;
 }
 
+// The three distinguishable answers to "which key signs this token?". Folding
+// them together is what makes an outage look like a forged token: "not-found"
+// is the client's problem (401), "unavailable" is ours (503).
+type KeyResolution =
+    | ({ outcome: "resolved" } & ResolvedVerificationKey)
+    | { outcome: "not-found" }
+    | { outcome: "unavailable"; error: Error };
+
+// Likewise for a single JWKS lookup.
+type KeyLookup =
+    | { outcome: "resolved"; key: string }
+    | { outcome: "not-found" }
+    | { outcome: "unavailable"; error: Error };
+
 // Resolve the signing key for a token by its `kid`, supporting both static keys
 // (matched by `key_id`) and dynamic JWKS endpoints (resolved by `kid`, with
 // caching and cache-miss refetch handled by jwks-rsa). Resolution is
@@ -148,17 +182,18 @@ interface ResolvedVerificationKey {
 async function resolveVerificationKey(
     header: JwtHeader,
     possibleConfigs: AuthenticationConfiguration[]
-): Promise<ResolvedVerificationKey | undefined> {
+): Promise<KeyResolution> {
     // A `kid` is required to select a key in both modes; fail fast without one.
     const kid = header.kid;
     if (!kid) {
-        return undefined;
+        return { outcome: "not-found" };
     }
 
     // Prefer a static key whose key_id matches the token's kid.
     const staticConfig = possibleConfigs.find(config => config.key !== undefined && config.keyId === kid);
     if (staticConfig && staticConfig.key !== undefined) {
         return {
+            outcome: "resolved",
             key: staticConfig.key,
             algorithms: isPemKey(staticConfig.key) ? RSA_ALGORITHMS : HMAC_ALGORITHMS,
             provider: staticConfig.provider
@@ -169,28 +204,66 @@ async function resolveVerificationKey(
     // than blindly taking the first) disambiguates when more than one JWKS
     // provider shares the issuer/audience: the one that actually publishes the
     // kid wins.
+    //
+    // An unreachable endpoint does not stop the search — a later provider may
+    // publish the kid, and a reachable "yes" beats an unreachable "don't know".
+    // The failure is only reported if no provider produced a key, in which case
+    // we genuinely do not know whether the token is good.
+    let unavailable: Error | undefined;
     for (const config of possibleConfigs) {
         if (config.jwksClient) {
-            const key = await getSigningKey(config.jwksClient, kid);
-            if (key) {
+            const lookup = await getSigningKey(config.jwksClient, kid);
+            if (lookup.outcome === "resolved") {
                 return {
-                    key,
+                    outcome: "resolved",
+                    key: lookup.key,
                     algorithms: RSA_ALGORITHMS,
                     provider: config.provider
                 };
             }
+            if (lookup.outcome === "unavailable") {
+                unavailable = unavailable ?? lookup.error;
+            }
         }
     }
 
-    return undefined;
+    return unavailable ? { outcome: "unavailable", error: unavailable } : { outcome: "not-found" };
 }
 
-// Promisified jwks-rsa key lookup. Resolves to the PEM public key for the kid,
-// or undefined if the endpoint does not publish it (or the fetch fails).
-function getSigningKey(client: jwksRsa.JwksClient, kid: string): Promise<string | undefined> {
+// Promisified jwks-rsa key lookup, distinguishing "this endpoint does not
+// publish that kid" from "we could not ask it."
+//
+// Only SigningKeyNotFoundError means the endpoint answered and the kid is not
+// among its keys. Every other failure — JwksError (non-2xx response, empty key
+// set), JwksRateLimitError, a socket error, a malformed JSON body — means the
+// question went unanswered. Classifying by `name` rather than `instanceof`
+// keeps a second copy of jwks-rsa in the dependency tree from turning an
+// unanswered question into a confident 401; the safe default for an
+// unrecognized error is "unavailable", never "not found".
+function getSigningKey(client: jwksRsa.JwksClient, kid: string): Promise<KeyLookup> {
     return new Promise(resolve => {
         client.getSigningKey(kid, (error, key) => {
-            resolve(error || !key ? undefined : key.getPublicKey());
+            if (error) {
+                resolve(error.name === "SigningKeyNotFoundError"
+                    ? { outcome: "not-found" }
+                    : { outcome: "unavailable", error });
+                return;
+            }
+            if (!key) {
+                resolve({ outcome: "not-found" });
+                return;
+            }
+            try {
+                resolve({ outcome: "resolved", key: key.getPublicKey() });
+            } catch (conversionError) {
+                // The endpoint published a key we cannot turn into PEM. That is
+                // the provider's problem, not the caller's, and it would
+                // otherwise escape this callback as an unhandled rejection.
+                resolve({
+                    outcome: "unavailable",
+                    error: conversionError instanceof Error ? conversionError : new Error(String(conversionError))
+                });
+            }
         });
     });
 }

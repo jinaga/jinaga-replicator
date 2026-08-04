@@ -2,7 +2,7 @@ import * as chardet from "chardet";
 import { Dirent } from "fs";
 import { readdir, readFile } from "fs/promises";
 import * as iconv from "iconv-lite";
-import { Declaration, FactManager, FactReference, Specification, SpecificationParser, Trace } from "jinaga";
+import { Declaration, FactManager, FactReference, HttpError, Specification, SpecificationParser, Trace } from "jinaga";
 import { join } from "path";
 
 export interface Subscription {
@@ -28,10 +28,33 @@ export function runSubscriptions(subscriptions: Subscription[], factManager: Fac
     };
 }
 
+// jinaga's web client retries a failed upstream request only when the status can
+// succeed on a second attempt: 5xx, 408, and 429. Everything else throws right
+// away, so a 401 or a 403 leaves the subscription permanently stalled instead of
+// quietly retrying forever.
+function isRetryableStatus(statusCode: number): boolean {
+    return statusCode >= 500 || statusCode === 408 || statusCode === 429;
+}
+
 function runSubscription(subscription: Subscription, factManager: FactManager) {
     const observer = factManager.startObserver(subscription.start, subscription.specification, _ => { }, true);
     observer.loaded().catch(error => {
-        Trace.error(`Error running subscription: ${error}`);
+        // An HttpError carries the upstream's status and its diagnostic body,
+        // rather than the bare status line that used to be all that survived.
+        // Report which kind of failure this is, because they need different
+        // things from an operator: a retryable one clears on its own, while a
+        // rejected token or a forbidding distribution rule never will.
+        if (error instanceof HttpError && !isRetryableStatus(error.statusCode)) {
+            Trace.error(
+                `Subscription rejected by the upstream replicator with status ${error.statusCode}: ${error.reason}. ` +
+                `This status is not retried, so the subscription will not load until the cause is fixed.`);
+        }
+        else if (error instanceof HttpError) {
+            Trace.warn(`Error running subscription, status ${error.statusCode}: ${error.reason}`);
+        }
+        else {
+            Trace.error(`Error running subscription: ${error}`);
+        }
     });
     return observer;
 }
