@@ -91,9 +91,12 @@ app.use('/jinaga', (req, res, next) => {
   handler(req, res, next);
 });
 
-// Errors passed to next() land here. Express's default handler would put the
-// stack trace in the response body whenever NODE_ENV is not "production", so
-// this replaces it with a fixed string and keeps the detail server-side.
+// Errors passed to next() land here. jinaga-server 3.7.5 handles the errors
+// raised inside its own routes, so what reaches this handler is what escapes
+// everything else — chiefly authenticate()'s next(error). Express's default
+// handler would put the stack trace in the response body whenever NODE_ENV is
+// not "production", so this replaces it with a fixed string and keeps the
+// detail server-side.
 app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   Trace.error(error instanceof Error ? error : new Error(String(error)));
   if (res.headersSent) {
@@ -101,6 +104,10 @@ app.use((error: any, _req: express.Request, res: express.Response, next: express
     return;
   }
   res.set('Access-Control-Allow-Origin', '*');
+  res.set('X-Content-Type-Options', 'nosniff');
+  // Without an explicit type, res.send of a string makes Express infer
+  // text/html and label an error body as markup.
+  res.type("text");
   res.status(500).send("Internal server error");
 });
 

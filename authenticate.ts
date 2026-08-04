@@ -27,6 +27,21 @@ function isPemKey(key: string): boolean {
     return /-----BEGIN (?:[A-Z0-9]+ )*(?:PUBLIC KEY|CERTIFICATE)-----/.test(key);
 }
 
+// Send an authentication failure. Express infers text/html from res.send of a
+// string, which labels a diagnostic as markup, so the type is set explicitly and
+// sniffing is disabled — the same treatment jinaga-server 3.7.5 gave its own
+// error bodies. Unlike those, every message here is a fixed literal with no
+// client-supplied text in it, so there is nothing to escape.
+function sendAuthenticationError(res: Response, status: number, message: string, retryAfterSeconds?: number): void {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('X-Content-Type-Options', 'nosniff');
+    if (retryAfterSeconds !== undefined) {
+        res.set('Retry-After', String(retryAfterSeconds));
+    }
+    res.type("text");
+    res.status(status).send(message);
+}
+
 export function authenticate(configs: AuthenticationConfiguration[], allowAnonymous: boolean) {
     return async (req: Request, res: Response, next: NextFunction) => {
         let possibleConfigs: AuthenticationConfiguration[] = configs;
@@ -44,8 +59,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     const decoded = decode(token, { complete: true });
                     const payload = decoded?.payload;
                     if (!decoded || !payload || typeof payload !== "object") {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid token");
+                        sendAuthenticationError(res, 401, "Invalid token");
                         Trace.warn(`Invalid token: ${payload}`);
                         return;
                     }
@@ -54,8 +68,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     // Validate the subject.
                     const subject = payload.sub;
                     if (typeof subject !== "string") {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid subject");
+                        sendAuthenticationError(res, 401, "Invalid subject");
                         Trace.warn(`Invalid subject: ${subject}`);
                         return;
                     }
@@ -64,16 +77,14 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     const issuer = payload.iss;
                     possibleConfigs = configs.filter(config => config.issuer === issuer);
                     if (possibleConfigs.length === 0) {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid issuer");
+                        sendAuthenticationError(res, 401, "Invalid issuer");
                         Trace.warn(`Invalid issuer: ${issuer}`);
                         return;
                     }
                     const audience = payload.aud;
                     possibleConfigs = possibleConfigs.filter(config => config.audience === audience);
                     if (possibleConfigs.length === 0) {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid audience");
+                        sendAuthenticationError(res, 401, "Invalid audience");
                         Trace.warn(`Invalid audience: ${audience}`);
                         return;
                     }
@@ -92,9 +103,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                             // A 401 here would tell a client with a perfectly valid
                             // token to go get another one, which will not help.
                             Trace.warn(`Unable to reach the signing key endpoint for key ID ${header.kid}: ${resolution.error.message}`);
-                            res.set('Access-Control-Allow-Origin', '*');
-                            res.set('Retry-After', '5');
-                            res.status(503).send("Authentication provider unavailable");
+                            sendAuthenticationError(res, 503, "Authentication provider unavailable", 5);
                             return;
                         }
                         if (resolution.outcome === "resolved") {
@@ -110,8 +119,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                     }
 
                     if (!verified) {
-                        res.set('Access-Control-Allow-Origin', '*');
-                        res.status(401).send("Invalid signature");
+                        sendAuthenticationError(res, 401, "Invalid signature");
                         Trace.warn(`Invalid signature`);
                         return;
                     }
@@ -128,8 +136,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                 }
             }
             else if (!allowAnonymous) {
-                res.set('Access-Control-Allow-Origin', '*');
-                res.status(401).send("No token");
+                sendAuthenticationError(res, 401, "No token");
                 Trace.warn("No access token provided");
                 return;
             }

@@ -135,6 +135,8 @@ A rejected request distinguishes a problem with the token from a problem on the 
 | `401 Unauthorized` | `Invalid signature` | The signature did not verify, or no configured provider publishes the token's `kid`. |
 | `503 Service Unavailable` | `Authentication provider unavailable` | A `jwks_uri` endpoint could not be reached, so the token could be neither proven nor disproven. |
 
+Every one of these bodies is plain text, sent as `Content-Type: text/plain` with `X-Content-Type-Options: nosniff`.
+
 The `503` carries a `Retry-After` header. It means the replicator could not reach the authority that publishes the signing keys — a network failure, a timeout, or a non-2xx response from the JWKS endpoint — not that the token is bad. A client should retry rather than discard an otherwise valid token. A `kid` that the JWKS endpoint answers for but does not publish is a genuine `401`, since the endpoint was reachable and gave a definitive answer.
 
 ## Security Policies
@@ -245,6 +247,15 @@ docker run \
   -e REPLICATOR_UPSTREAM_2=https://replicator2.example.com \
   jinaga/jinaga-replicator
 ```
+
+### When an upstream rejects a subscription
+
+A request to an upstream replicator is retried only when the status can succeed on a second attempt — `5xx`, `408`, and `429`. Every other `4xx` is deterministic, so it fails immediately rather than being retried indefinitely.
+
+The two cases are logged differently, because they need different things from an operator:
+
+- **Retryable** — logged as a warning with the upstream's status and reason, for example `Error running subscription, status 503: initialization failed`. The upstream is starting up or degraded; the subscription loads on its own once it recovers.
+- **Not retryable** — logged as an error naming the status and the upstream's explanation, for example `Subscription rejected by the upstream replicator with status 401: No token.` The subscription will not load until the cause is fixed — typically a missing or rejected token, or a distribution rule upstream that does not share the feed.
 
 ## Subscription Files
 
