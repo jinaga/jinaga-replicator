@@ -9,8 +9,25 @@ jobs:
 
   build:
 
-    runs-on: ubuntu-latest
-    
+    # Build each platform on its native runner to avoid QEMU emulation hangs.
+    # An emulated arm64 `npm ci` has been observed wedging with no output for
+    # 36+ minutes; using a native arm64 runner eliminates that failure mode and
+    # also matches how release images are built in docker-image.yml.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+    # A healthy run takes ~5 minutes; 20 minutes leaves ample headroom while
+    # still failing promptly if a hang occurs instead of holding a runner for
+    # the GitHub-default six hours.
+    timeout-minutes: 20
+
     steps:
       -
         name: Checkout
@@ -25,16 +42,13 @@ jobs:
           tags: |
             type=ref,event=pr
       -
-        name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       -
         name: Build
         uses: docker/build-push-action@v6
         with:
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           context: .
           push: false
           tags: ${{ steps.meta.outputs.tags }}
@@ -45,6 +59,6 @@ jobs:
         with:
           context: .
           file: Dockerfile.no-security-policies
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: false
           tags: jinaga/jinaga-replicator-no-security-policies:latest
