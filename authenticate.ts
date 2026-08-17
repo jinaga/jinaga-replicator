@@ -42,6 +42,31 @@ function sendAuthenticationError(res: Response, status: number, message: string,
     res.status(status).send(message);
 }
 
+// OpenID Connect Core 1.0 §5.1 names the display name claim `name`, with
+// `preferred_username` as the other standard claim carrying something a person
+// would recognize. `display_name` is not standard, but it is what earlier
+// versions of this replicator read, so it stays last in the chain rather than
+// being dropped — a deployment whose authorization server was configured to
+// satisfy the old behavior keeps working.
+//
+// JwtPayload has an `any` index signature, so each claim is checked rather than
+// coalesced: a token carrying `"name": {...}` or `"name": 42` would otherwise
+// hand a non-string straight to jinaga-server, whose ProfileMessage declares
+// displayName as a required string and passes it to the client unexamined.
+// Blank and whitespace-only values are skipped for the same reason the terminal
+// "" exists: they name nobody, so a later claim deserves the chance.
+const DISPLAY_NAME_CLAIMS = ["name", "preferred_username", "display_name"];
+
+function selectDisplayName(payload: JwtPayload): string {
+    for (const claim of DISPLAY_NAME_CLAIMS) {
+        const value = payload[claim];
+        if (typeof value === "string" && value.trim() !== "") {
+            return value;
+        }
+    }
+    return "";
+}
+
 export function authenticate(configs: AuthenticationConfiguration[], allowAnonymous: boolean) {
     return async (req: Request, res: Response, next: NextFunction) => {
         let possibleConfigs: AuthenticationConfiguration[] = configs;
@@ -130,7 +155,7 @@ export function authenticate(configs: AuthenticationConfiguration[], allowAnonym
                         id: subject,
                         provider: provider,
                         profile: {
-                            displayName: payload.display_name ?? ""
+                            displayName: selectDisplayName(payload)
                         }
                     }
                 }
