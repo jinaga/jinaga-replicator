@@ -23,7 +23,7 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 
 ### Startup flow (`index.ts`)
 
-1. Initialize OpenTelemetry (`telemetry/`) before any other imports
+1. Initialize OpenTelemetry (`telemetry/`) before any other imports, then configure `Trace` and set its level from `LOG_LEVEL` (an invalid value is thrown as the first step of initialization)
 2. Load JWT authentication providers from `JINAGA_AUTHENTICATION` directory
 3. Load security policies from `JINAGA_POLICIES` directory
 4. Connect to PostgreSQL via `JINAGA_POSTGRESQL`
@@ -45,7 +45,7 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 
 - **`health.ts`** — Provides unauthenticated `/health` (liveness) and `/ready` (readiness) endpoints. Liveness always returns 200 and performs no dependency checks (so a database outage can't trigger a container restart). Readiness returns 503 until initialization completes, then verifies PostgreSQL connectivity (`SELECT 1` via a dedicated single-connection pool) on each probe. The not-ready `reason` separates `initializing` from `initialization failed` (recorded by `setInitializationFailed` when the startup catch in `index.ts` fires, since nothing retries) and `database unavailable`. Both are registered before async initialization so they respond throughout startup; `notReadyReason()` is shared with the `/jinaga` gate so a request to a real route gets the same diagnosis as a probe. The Dockerfile's `HEALTHCHECK` probes `/health`.
 
-- **`telemetry/`** — OpenTelemetry SDK setup. Activates gRPC OTLP exporters when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; falls back to console output otherwise.
+- **`telemetry/`** — OpenTelemetry SDK setup. Activates gRPC OTLP exporters when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; falls back to console output otherwise. `OpenTelemetryTracer` implements `debug` as well as `info`/`warn`/`error`, so `LOG_LEVEL=debug` detail reaches OpenTelemetry.
 
 ### Configuration (environment variables)
 
@@ -55,6 +55,8 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 | `JINAGA_POSTGRESQL` | PostgreSQL connection string |
 | `JINAGA_POLICIES` | Path to directory of `.policy` files |
 | `JINAGA_POLICIES_WATCH` | Set to `true` to hot-reload `.policy` files without a restart, via a per-request `stat`-based staleness check (default off) |
+| `LOG_LEVEL` | Trace threshold: `debug`, `info`, `warn` or `error` (default `info`); set in `index.ts` right after `startTracer()`, and an invalid value fails initialization. Accepted values come from `telemetry/logLevel.ts`, a `Record<TraceLevel, true>` |
+| `POSTGRES_POOL_MAX`, `POSTGRES_IDLE_TIMEOUT_MILLIS`, `POSTGRES_CONNECTION_TIMEOUT_MILLIS` | Pool settings read by `jinaga-server` (defaults 10, 30000, 0); an invalid value makes `JinagaServer.create` throw |
 | `JINAGA_AUTHENTICATION` | Path to directory of `.authentication` files |
 | `JINAGA_SUBSCRIPTIONS` | Path to directory of `.subscription` files |
 | `REPLICATOR_UPSTREAM_N` | Numbered upstream replicator URLs (HTTP/HTTPS) |

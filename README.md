@@ -196,6 +196,8 @@ purge {
 
 You can produce a policy file from .NET using the `dotnet jinaga` command line tool, or from JavaScript using the `jinaga` package.
 
+An authorization rule that can never pass is refused when the policy file is loaded. A rule runs before the fact it authorizes is saved, so a rule that walks to successors of that fact, or that reads a predecessor of it inside a negative existential condition, finds nothing and would refuse every write. Since `jinaga` 6.14, such a rule fails with an `AuthorizationRuleError` naming the label, and the replicator fails initialization. A policy file that loaded under an earlier replicator may therefore fail after an upgrade. Rewrite the rule to walk the fact's predecessors before its first successor join.
+
 ### Mounting Policy Files
 
 To run a replicator with security policies, mount a directory containing your policy files to the container's `/var/lib/replicator/policies` directory as read-only:
@@ -344,7 +346,7 @@ Content-Type: application/json
 { "status": "not ready", "reason": "initializing" }
 ```
 
-When initialization failed and will not be retried — a malformed `.policy` or `.provider` file, a missing configuration directory, an unusable PostgreSQL connection string. The replicator will stay in this state until it is reconfigured and restarted; the cause is written to the container log:
+When initialization failed and will not be retried — a malformed `.policy` or `.provider` file, a missing configuration directory, an unusable PostgreSQL connection string, an invalid `LOG_LEVEL` or `POSTGRES_*` pool variable. The replicator will stay in this state until it is reconfigured and restarted; the cause is written to the container log:
 
 ```
 HTTP/1.1 503 Service Unavailable
@@ -409,6 +411,12 @@ The Jinaga Replicator can be configured using environment variables. Below are t
 - `JINAGA_POLICIES_WATCH`: Set to `true` to hot-reload policy files without a restart. When enabled, each request cheaply checks (via `stat`) whether the `.policy` files or the `no-security-policies` marker under `JINAGA_POLICIES` have changed — added, edited, or removed — and, if so, rebuilds the rules in the background. Subsequent requests enforce the new rules while in-flight requests finish against the old ones. If a changed file fails to parse, the currently loaded rules are kept and the error is logged. Because it relies on `stat` rather than filesystem-change events, it works over network-mounted policy directories (SMB/NFS, e.g. Azure Files) where inotify-style events are not delivered, adds no background poll loop while idle, and is scale-to-zero friendly. Default is `false`.
 - `JINAGA_AUTHENTICATION`: The path to the directory where the replicator will look for authentication provider files. Default is `authentication`.
 - `JINAGA_SUBSCRIPTIONS`: The path to the directory where the replicator will look for subscription files. Default is `subscriptions`.
+- `POSTGRES_POOL_MAX`: The maximum number of connections in each PostgreSQL pool the replicator opens. Default is `10`. Must be a whole number of at least `1`.
+- `POSTGRES_IDLE_TIMEOUT_MILLIS`: How long, in milliseconds, an idle connection stays in the pool before it is closed. Default is `30000`. Must be a whole number of at least `0`.
+- `POSTGRES_CONNECTION_TIMEOUT_MILLIS`: How long, in milliseconds, a request waits for a connection to come free before failing. Default is `0`, which waits forever. Must be a whole number of at least `0`.
+
+  An invalid value for any of the three pool variables, such as `30s` or `POSTGRES_POOL_MAX=0`, fails initialization: the process stays up, `/health` answers 200, and `/ready` and `/jinaga` answer 503 with `"reason": "initialization failed"`. An unset or empty variable takes the default.
+- `LOG_LEVEL`: The lowest severity that is logged: `debug`, `info`, `warn` or `error`. Default is `info`. An unset or empty value takes the default, and surrounding whitespace is ignored. Any other value, including a different case such as `DEBUG`, fails initialization the same way as an invalid pool variable, and the log names the value received and the accepted values. `debug` adds one line per listener, per match and per loop iteration. Use it to diagnose an incident, not for everyday operation, because it multiplies the size of the log. The level governs what the replicator logs to the console and to OpenTelemetry. Lines that `jinaga-server` writes directly to the console, such as the `Stream opened` and `Stream ended` lines, are not affected.
 - `OTEL_EXPORTER_OTLP_ENDPOINT`: The OpenTelemetry OTLP endpoint accepting gRPC. If not set, OpenTelemetry will not be enabled.
 - `OTEL_SERVICE_NAME`: The OpenTelemetry service name. Default is `jinaga-replicator`.
 

@@ -9,6 +9,7 @@ import { initializeHealthCheck, livenessHandler, notReadyReason, readinessHandle
 import { loadPolicies } from "./loadPolicies";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import { createPolicyReloader } from "./policyReloader";
+import { readLogLevel } from "./telemetry/logLevel";
 import { startTracer } from "./telemetry/tracer";
 import process = require("process");
 import { RuleSet, Trace } from "jinaga";
@@ -19,6 +20,19 @@ import { RuleSet, Trace } from "jinaga";
 const RELOAD_GRACE_MS = 30_000;
 
 startTracer();
+
+// The trace level is set right after the tracer, so it governs every line that
+// follows, including the startup lines written before JinagaServer.create. An
+// invalid LOG_LEVEL is held here and thrown as the first step of
+// initialization, so it is reported the same way as a malformed .policy file:
+// the process stays up and /ready answers "initialization failed".
+let logLevelError: unknown;
+try {
+  Trace.setLevel(readLogLevel());
+}
+catch (error) {
+  logLevelError = error;
+}
 
 process.on('SIGINT', async () => {
   console.log("\n\nStopping replicator\n");
@@ -112,6 +126,10 @@ app.use((error: any, _req: express.Request, res: express.Response, next: express
 });
 
 async function initializeReplicator() {
+  if (logLevelError) {
+    throw logLevelError;
+  }
+
   const pgConnection = process.env.JINAGA_POSTGRESQL ||
     'postgresql://repl:replpw@localhost:5432/replicator';
   const policiesPath = process.env.JINAGA_POLICIES || 'policies';
