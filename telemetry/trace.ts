@@ -89,6 +89,13 @@ export class OpenTelemetryTracer implements Tracer {
     }
   }
 
+  debug(message: string): void {
+    this.logger.emit({
+      body: message,
+      severityText: 'DEBUG',
+    });
+  }
+
   info(message: string): void {
     this.logger.emit({
       body: message,
