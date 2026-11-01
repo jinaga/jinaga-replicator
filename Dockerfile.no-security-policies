@@ -1,3 +1,6 @@
+# CI builds this on top of the image built in the same run, by overriding
+# jinaga/jinaga-replicator with a named build context (see the workflows).
+# A plain local build uses the latest published image instead.
 FROM jinaga/jinaga-replicator
 
 # Create an empty no-security-policies file

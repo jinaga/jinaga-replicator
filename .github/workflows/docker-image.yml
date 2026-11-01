@@ -53,6 +53,11 @@ jobs:
           context: .
           file: Dockerfile.no-security-policies
           platforms: ${{ matrix.platform }}
+          # Base this image on the one just built and pushed by digest above.
+          # Without this, FROM jinaga/jinaga-replicator pulls the previous
+          # release from Docker Hub, so this image would lag one release behind.
+          build-contexts: |
+            jinaga/jinaga-replicator=docker-image://jinaga/jinaga-replicator@${{ steps.build.outputs.digest }}
           push: ${{ github.event_name != 'pull_request' }}
           outputs: type=image,name=jinaga/jinaga-replicator-no-security-policies,push-by-digest=true,name-canonical=true
       -
