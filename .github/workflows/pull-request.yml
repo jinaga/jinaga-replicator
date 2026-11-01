@@ -46,6 +46,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       -
         name: Build
+        id: build
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
@@ -53,6 +54,8 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Keep the image as an OCI layout so the next step can build on it.
+          outputs: type=oci,dest=/tmp/replicator-oci,tar=false
       -
         name: Build no-security-policies image
         uses: docker/build-push-action@v6
@@ -60,5 +63,10 @@ jobs:
           context: .
           file: Dockerfile.no-security-policies
           platforms: ${{ matrix.platform }}
+          # Base this image on the one just built from this pull request.
+          # Without this, FROM jinaga/jinaga-replicator pulls the latest
+          # release from Docker Hub, and the pull request's code goes untested.
+          build-contexts: |
+            jinaga/jinaga-replicator=oci-layout:///tmp/replicator-oci@${{ steps.build.outputs.digest }}
           push: false
           tags: jinaga/jinaga-replicator-no-security-policies:latest
