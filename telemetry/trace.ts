@@ -1,4 +1,4 @@
-import { Attributes, context, Counter, Histogram, MetricOptions, metrics, ObservableResult, SpanStatusCode, trace } from '@opentelemetry/api';
+import { Attributes, context, Counter, Gauge, Histogram, metrics, SpanStatusCode, trace } from '@opentelemetry/api';
 import { logs } from '@opentelemetry/api-logs';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { NodeTracerProvider, TracerConfig } from '@opentelemetry/sdk-trace-node';
@@ -18,6 +18,7 @@ export class OpenTelemetryTracer implements Tracer {
   private counterTimeout: NodeJS.Timeout | null = null;
   private counters: { [key: string]: Counter<Attributes> } = {};
   private histograms: { [key: string]: Histogram<Attributes> } = {};
+  private gauges: { [key: string]: Gauge<Attributes> } = {};
 
   async dependency<T>(name: string, data: string, operation: () => Promise<T>): Promise<T> {
     let histogram: Histogram<Attributes>;
@@ -58,13 +59,22 @@ export class OpenTelemetryTracer implements Tracer {
     }
   }
 
+  // Each measurement is recorded on a gauge named for its key, created once and
+  // reused, with the message as an attribute. Creating an instrument per call,
+  // as this once did, registered a new observable gauge every time: callers
+  // such as jinaga-server's feed usage (every 10 seconds per active feed) and
+  // distribution.unmatched (per request) made the registrations, and their
+  // callbacks, grow for the life of the process, and the message saying what
+  // was measured was dropped.
   metric(message: string, measurements: { [key: string]: number }): void {
+    const attributes = metricAttributes(message);
     Object.entries(measurements).forEach(([key, value]) => {
-      this.meter.createObservableGauge(key, {
-        callback: async (observableResult: ObservableResult) => {
-          observableResult.observe(value);
-        },
-      } as MetricOptions);
+      let gauge = this.gauges[key];
+      if (!gauge) {
+        gauge = this.meter.createGauge(key);
+        this.gauges[key] = gauge;
+      }
+      gauge.record(value, attributes);
     });
   }
 
@@ -117,4 +127,20 @@ export class OpenTelemetryTracer implements Tracer {
       attributes: { stack: error.stack },
     });
   }
+}
+
+// jinaga-server reports feed usage as "Feed usage <shapeKey> <instanceKey>".
+// Splitting the keys out lets a dashboard group by feed shape, or pick out one
+// instance, rather than match on a composite string. Any other message is
+// carried whole.
+const feedUsagePrefix = "Feed usage ";
+
+export function metricAttributes(message: string): Attributes {
+  if (message.startsWith(feedUsagePrefix)) {
+    const [shape, instance] = message.slice(feedUsagePrefix.length).split(" ");
+    if (shape && instance) {
+      return { message: "Feed usage", shape, instance };
+    }
+  }
+  return { message };
 }

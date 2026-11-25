@@ -1,0 +1,21 @@
+authorization {
+    any Jinaga.User
+    (t: H.Tenant) {
+        u: Jinaga.User [
+            u = t->creator: Jinaga.User
+        ]
+    } => u
+    (a: H.Attendee) {
+        u: Jinaga.User [
+            u = a->user: Jinaga.User
+        ]
+    } => u
+    (n: H.Answer) {
+        a: H.Attendee [
+            a->tenant: H.Tenant = n->tenant: H.Tenant
+        ]
+        u: Jinaga.User [
+            u = a->user: Jinaga.User
+        ]
+    } => u
+}

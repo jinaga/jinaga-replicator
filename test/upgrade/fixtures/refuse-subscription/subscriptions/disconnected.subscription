@@ -1,0 +1,20 @@
+subscription {
+    let a: H.Company = {
+        name: "a"
+    }
+    let b: H.Person = {
+        name: "b"
+    }
+
+    (a: H.Company, b: H.Person) {
+        o: H.Office [
+            o->company: H.Company = a
+        ]
+        p: H.Project [
+            p->creator: H.Person = b
+        ]
+    } => {
+        o = o
+        p = p
+    }
+}

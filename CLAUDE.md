@@ -15,7 +15,7 @@ npm run dev
 npm start
 ```
 
-There are no automated tests (`npm test` is a placeholder). Manual API tests live in `http/` and can be run with the HttpYac VS Code extension.
+There are no unit tests (`npm test` is a placeholder). Manual API tests live in `http/` and can be run with the HttpYac VS Code extension. `test/upgrade/` is a Docker harness for releases: `build-rc.sh [jinaga-server.tgz]` builds a candidate image (optionally against an unpublished jinaga-server tarball), and `run.sh` upgrades a data folder written by the previous release in place, then probes the release's features against both images (see `test/upgrade/README.md`).
 
 ## Architecture
 
@@ -31,6 +31,8 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 6. Load subscriptions from `JINAGA_SUBSCRIPTIONS` directory and connect to upstream replicators discovered from `REPLICATOR_UPSTREAM_N` env vars
 7. Register graceful shutdown on SIGINT/SIGTERM
 
+Before opening the fact store, initialization waits (`databaseSetup.ts`) for the marker file named by `JINAGA_DATABASE_SETUP_MARKER`, which `start.sh` writes once it has applied the schema upgrade; `/ready` reports `database setup` meanwhile. Outside the image the variable is unset and nothing waits.
+
 ### Key modules
 
 - **`authenticate.ts`** — Builds a JWT authentication function for `JinagaServer`. Reads `.provider` files (one per provider); each file matches on `iss`/`aud` and resolves the signing key either from a static `key`/`key_id` (RSA PEM or symmetric secret) or dynamically from a `jwks_uri` endpoint by the token's `kid` (with caching and cache-miss refetch via `jwks-rsa`, supporting RS256 key rotation). Verification is async (awaited) and constrained by an explicit algorithm allowlist (RS256 for asymmetric/JWKS keys, HMAC family for symmetric keys). A JWKS lookup is classified: only jwks-rsa's `SigningKeyNotFoundError` (the endpoint answered, and does not publish that `kid`) is a 401; an unreachable endpoint, non-2xx response, timeout, or rate-limit yields 503 `Authentication provider unavailable` with `Retry-After`, so a valid token during an outage is not reported as a bad token. Every failure response is sent as `text/plain` with `X-Content-Type-Options: nosniff` via `sendAuthenticationError`, since `res.send` of a string otherwise makes Express label a diagnostic as `text/html`. The request user's `profile.displayName` is taken from the first of the OIDC §5.1 `name`, `preferred_username`, or the legacy non-standard `display_name` claims that carries a non-blank string — claims are type-checked rather than coalesced, since `jinaga-server` passes the value to the client as a required string without examining it. Supports anonymous access if `allow-anonymous` marker file is present.
@@ -43,9 +45,13 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 
 - **`findUpstreamReplicators.ts`** — Discovers upstream replicator URLs from `REPLICATOR_UPSTREAM_1`, `REPLICATOR_UPSTREAM_2`, … env vars.
 
-- **`health.ts`** — Provides unauthenticated `/health` (liveness) and `/ready` (readiness) endpoints. Liveness always returns 200 and performs no dependency checks (so a database outage can't trigger a container restart). Readiness returns 503 until initialization completes, then verifies PostgreSQL connectivity (`SELECT 1` via a dedicated single-connection pool) on each probe. The not-ready `reason` separates `initializing` from `initialization failed` (recorded by `setInitializationFailed` when the startup catch in `index.ts` fires, since nothing retries) and `database unavailable`. Both are registered before async initialization so they respond throughout startup; `notReadyReason()` is shared with the `/jinaga` gate so a request to a real route gets the same diagnosis as a probe. The Dockerfile's `HEALTHCHECK` probes `/health`.
+- **`health.ts`** — Provides unauthenticated `/health` (liveness) and `/ready` (readiness) endpoints. Liveness always returns 200 and performs no dependency checks (so a database outage can't trigger a container restart). Readiness returns 503 until initialization completes, then verifies PostgreSQL connectivity (`SELECT 1` via a dedicated single-connection pool) on each probe. The not-ready `reason` separates `initializing` from `initialization failed` (recorded by `setInitializationFailed` when the startup catch in `index.ts` fires, since nothing retries) `database unavailable`, and `database setup` (while initialization waits for `start.sh`'s schema upgrade). Both are registered before async initialization so they respond throughout startup; `notReadyReason()` is shared with the `/jinaga` gate so a request to a real route gets the same diagnosis as a probe. The Dockerfile's `HEALTHCHECK` probes `/health`.
 
-- **`telemetry/`** — OpenTelemetry SDK setup. Activates gRPC OTLP exporters when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; falls back to console output otherwise. `OpenTelemetryTracer` implements `debug` as well as `info`/`warn`/`error`, so `LOG_LEVEL=debug` detail reaches OpenTelemetry.
+- **`start.sh`** — The image's entrypoint. Starts PostgreSQL (through the postgres image's entrypoint, whose `initdb.d` scripts from `jinaga-postgres-fact-keystore` run only on an empty data folder) and the replicator together. Once PostgreSQL answers on TCP (the entrypoint's temporary init server listens on no TCP address), it applies `jinaga-server`'s idempotent `setup.sql` as the superuser, so a data folder from an earlier version receives later schema changes, then writes the marker. `JINAGA_SKIP_DATABASE_SETUP=true` skips that; a failed setup is logged and the replicator starts anyway. It traps SIGTERM/SIGINT and stops the replicator, then PostgreSQL (fast shutdown); if either process exits on its own it stops the other and exits with that status. `repair-edge-order.sql` (for 3.x databases with edges out of fact-id order) is never run automatically; the README documents the manual procedure.
+
+- **`saveLineLimit.ts`** — Reads `JINAGA_MAX_SAVE_LINE_BYTES` into `JinagaServer`'s `maxSaveLineBytes` (default 1 MiB, deliberately below jinaga-server's 16 MiB; the reasoning is in the file). An invalid value fails initialization.
+
+- **`telemetry/`** — OpenTelemetry SDK setup. Activates gRPC OTLP exporters when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; falls back to console output otherwise. `OpenTelemetryTracer` implements `debug` as well as `info`/`warn`/`error`, so `LOG_LEVEL=debug` detail reaches OpenTelemetry. `metric` records each measurement on a gauge created once per key, with the message as an attribute (feed usage messages are split into `shape` and `instance`), since creating an instrument per call leaked.
 
 ### Configuration (environment variables)
 
@@ -56,6 +62,8 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 | `JINAGA_POLICIES` | Path to directory of `.policy` files |
 | `JINAGA_POLICIES_WATCH` | Set to `true` to hot-reload `.policy` files without a restart, via a per-request `stat`-based staleness check (default off) |
 | `LOG_LEVEL` | Trace threshold: `debug`, `info`, `warn` or `error` (default `info`); set in `index.ts` right after `startTracer()`, and an invalid value fails initialization. Accepted values come from `telemetry/logLevel.ts`, a `Record<TraceLevel, true>` |
+| `JINAGA_MAX_SAVE_LINE_BYTES` | Largest line in a graph-format save, in effect the largest fact (default 1 MiB); invalid fails initialization |
+| `JINAGA_SKIP_DATABASE_SETUP` | `true` skips `start.sh`'s schema upgrade (default off) |
 | `POSTGRES_POOL_MAX`, `POSTGRES_IDLE_TIMEOUT_MILLIS`, `POSTGRES_CONNECTION_TIMEOUT_MILLIS` | Pool settings read by `jinaga-server` (defaults 10, 30000, 0); an invalid value makes `JinagaServer.create` throw |
 | `JINAGA_AUTHENTICATION` | Path to directory of `.authentication` files |
 | `JINAGA_SUBSCRIPTIONS` | Path to directory of `.subscription` files |
@@ -71,4 +79,4 @@ The Jinaga Replicator is a **fact storage and distribution node** in a Jinaga me
 
 ### Deployment
 
-Docker images are built and published via `.github/workflows/docker-image.yml`. The image is Alpine-based with a multi-stage build; configuration directories are mounted as volumes at runtime.
+Docker images are built and published via `.github/workflows/docker-image.yml`. The image is Alpine-based with a multi-stage build on `jinaga/jinaga-postgres-fact-keystore` (PostgreSQL 14; keep the major version, since a mounted data folder cannot move across it); configuration directories are mounted as volumes at runtime. Replication between replicators is pull-only: `jinaga-server`'s `PostgresQueue` stores nothing, so facts saved to a replicator are not pushed upstream.

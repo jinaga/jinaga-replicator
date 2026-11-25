@@ -3,3 +3,4 @@ dist/
 http/.env.*
 authentication/fusionauth.provider
 policies/blog.policy
+test/upgrade/.work/

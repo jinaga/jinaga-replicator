@@ -5,8 +5,10 @@ import * as http from "http";
 import { JinagaServer, JinagaServerInstance } from "jinaga-server";
 import { authenticate, loadAuthenticationConfigurations } from "./authenticate";
 import { findUpstreamReplicators } from "./findUpstreamReplicators";
-import { initializeHealthCheck, livenessHandler, notReadyReason, readinessHandler, setInitializationFailed, setReady, shutdownHealthCheck } from "./health";
+import { waitForDatabaseSetup } from "./databaseSetup";
+import { initializeHealthCheck, livenessHandler, notReadyReason, readinessHandler, setInitializationFailed, setReady, setWaitingForDatabaseSetup, shutdownHealthCheck } from "./health";
 import { loadPolicies } from "./loadPolicies";
+import { readMaxSaveLineBytes } from "./saveLineLimit";
 import { loadSubscriptions, runSubscriptions } from "./subscriptions";
 import { createPolicyReloader } from "./policyReloader";
 import { readLogLevel } from "./telemetry/logLevel";
@@ -139,6 +141,7 @@ async function initializeReplicator() {
   const subscriptions = await loadSubscriptions(subscriptionPath);
 
   const upstreamReplicators = findUpstreamReplicators();
+  const maxSaveLineBytes = readMaxSaveLineBytes();
 
   function buildInstance(ruleSet: RuleSet | undefined): JinagaServerInstance {
     return JinagaServer.create({
@@ -147,11 +150,22 @@ async function initializeReplicator() {
       upstreamReplicators: upstreamReplicators,
       authorization: ruleSet ? a => ruleSet.authorizationRules : undefined,
       distribution: ruleSet ? d => ruleSet.distributionRules : undefined,
-      purgeConditions: ruleSet ? p => ruleSet.purgeConditions : undefined
+      purgeConditions: ruleSet ? p => ruleSet.purgeConditions : undefined,
+      maxSaveLineBytes
     });
   }
 
   const ruleSet = await loadPolicies(policiesPath);
+
+  // Configuration errors above are reported at once. Only the fact store waits
+  // for start.sh to finish upgrading the schema.
+  setWaitingForDatabaseSetup(true);
+  try {
+    await waitForDatabaseSetup();
+  }
+  finally {
+    setWaitingForDatabaseSetup(false);
+  }
 
   // The active replicator instance plus the disposer for the subscriptions
   // attached to its fact manager. Reloading rebuilds this and swaps it in.

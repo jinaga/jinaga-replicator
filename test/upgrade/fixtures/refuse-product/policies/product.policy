@@ -1,0 +1,17 @@
+distribution {
+    share (p1: H.R, p2: H.U) {
+        u: H.X [
+            u->r: H.R = p1
+        ]
+        x: H.Y [
+            x->a: H.U = p2
+            !E {
+                e: H.E [
+                    e->u: H.X = u
+                    e->x: H.Y = x
+                ]
+            }
+        ]
+    } => x
+    with everyone
+}
