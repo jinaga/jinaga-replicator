@@ -1,0 +1,51 @@
+authorization {
+    any H.Calendar
+    any H.Event
+    any H.Delete
+    any H.Approval
+    any H.Restaurant
+    any H.Server
+    any H.Terminated
+    any H.Rehired
+    any H.Rate
+}
+distribution {
+    share (c: H.Calendar) {
+        e: H.Event [
+            e->calendar: H.Calendar = c
+            !E {
+                d: H.Delete [
+                    d->event: H.Event = e
+                    E {
+                        a: H.Approval [
+                            a->delete: H.Delete = d
+                        ]
+                    }
+                ]
+            }
+        ]
+    } => e
+    with everyone
+    share (r: H.Restaurant) {
+        s: H.Server [
+            s->restaurant: H.Restaurant = r
+            !E {
+                st: H.Terminated [
+                    st->server: H.Server = s
+                    !E {
+                        sr: H.Rehired [
+                            sr->terminated: H.Terminated = st
+                        ]
+                    }
+                ]
+            }
+        ]
+    } => {
+        rates = {
+            sr: H.Rate [
+                sr->server: H.Server = s
+            ]
+        } => sr
+    }
+    with everyone
+}

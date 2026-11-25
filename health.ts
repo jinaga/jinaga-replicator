@@ -14,6 +14,7 @@ import { Pool } from "pg";
 
 let ready = false;
 let initializationFailed = false;
+let waitingForDatabaseSetup = false;
 let healthPool: Pool | null = null;
 
 export function initializeHealthCheck(connectionString: string): void {
@@ -44,10 +45,20 @@ export function setInitializationFailed(): void {
   initializationFailed = true;
 }
 
+// Records that initialization is waiting for start.sh to finish upgrading the
+// database schema, which can take a while on a large data folder. Reported
+// separately so that a slow start is not mistaken for a hung one.
+export function setWaitingForDatabaseSetup(value: boolean): void {
+  waitingForDatabaseSetup = value;
+}
+
 // The reason reported while the replicator is not yet serving. Shared with the
 // /jinaga gate so a request to a real route gets the same diagnosis as a probe.
 export function notReadyReason(): string {
-  return initializationFailed ? "initialization failed" : "initializing";
+  if (initializationFailed) {
+    return "initialization failed";
+  }
+  return waitingForDatabaseSetup ? "database setup" : "initializing";
 }
 
 export function livenessHandler(_req: Request, res: Response): void {

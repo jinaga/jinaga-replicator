@@ -1,0 +1,26 @@
+subscription {
+    let c: H.Calendar = {
+        name: "team"
+    }
+
+    (c: H.Calendar) {
+        e: H.Event [
+            e->calendar: H.Calendar = c
+            !E {
+                d: H.Delete [
+                    d->event: H.Event = e
+                    !E {
+                        r: H.Restore [
+                            r->delete: H.Delete = d
+                        ]
+                    }
+                    !E {
+                        u: H.Undo [
+                            u->delete: H.Delete = d
+                        ]
+                    }
+                ]
+            }
+        ]
+    } => e
+}

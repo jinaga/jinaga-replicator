@@ -250,6 +250,8 @@ docker run \
   jinaga/jinaga-replicator
 ```
 
+Replication between replicators is pull-only. A replicator loads facts from its upstreams through its [subscription files](#subscription-files). It does not push the facts saved to it upstream, so a fact written to a downstream replicator stays there unless the upstream subscribes to it.
+
 ### When an upstream rejects a subscription
 
 A request to an upstream replicator is retried only when the status can succeed on a second attempt — `5xx`, `408`, and `429`. Every other `4xx` is deterministic, so it fails immediately rather than being retried indefinitely.
@@ -322,7 +324,7 @@ Content-Type: application/json
 { "status": "ok" }
 ```
 
-Use this endpoint for a container runtime health check (Docker `HEALTHCHECK`) or a Kubernetes liveness probe.
+Use this endpoint for a container runtime health check (Docker `HEALTHCHECK`) or a Kubernetes liveness probe. It answers while the database schema is being upgraded, so a long upgrade does not get the container restarted.
 
 ### `GET /ready` — Readiness
 
@@ -337,7 +339,16 @@ Content-Type: application/json
 { "status": "ready" }
 ```
 
-Not ready — the `reason` distinguishes the three cases. While the replicator is still starting up:
+Not ready — the `reason` distinguishes four cases. While the container is upgrading the database schema, which on a large data folder can take a while (see [Upgrading from 3.x to 4.0](#upgrading-from-3x-to-40)):
+
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{ "status": "not ready", "reason": "database setup" }
+```
+
+While the replicator is still starting up:
 
 ```
 HTTP/1.1 503 Service Unavailable
@@ -346,7 +357,7 @@ Content-Type: application/json
 { "status": "not ready", "reason": "initializing" }
 ```
 
-When initialization failed and will not be retried — a malformed `.policy` or `.provider` file, a missing configuration directory, an unusable PostgreSQL connection string, an invalid `LOG_LEVEL` or `POSTGRES_*` pool variable. The replicator will stay in this state until it is reconfigured and restarted; the cause is written to the container log:
+When initialization failed and will not be retried — a malformed `.policy` or `.provider` file, a missing configuration directory, an unusable PostgreSQL connection string, an invalid `LOG_LEVEL`, `JINAGA_MAX_SAVE_LINE_BYTES` or `POSTGRES_*` pool variable, or a specification that the parser refuses. The replicator will stay in this state until it is reconfigured and restarted; the cause is written to the container log:
 
 ```
 HTTP/1.1 503 Service Unavailable
@@ -380,6 +391,10 @@ Content-Type: application/json
 
 This is deliberate: a `404` here would be indistinguishable from a URL typo or a routing misconfiguration, leaving a caller to debug their own request when the replicator is the thing that is broken. A `404` from a replicator therefore always means the route does not exist, never that the replicator is not ready.
 
+### Stopping the container
+
+`docker stop` (SIGTERM) stops the replicator and then PostgreSQL, with a fast shutdown, and the container exits with status `0`. Before 4.0 the container ignored SIGTERM and was killed when the stop timeout expired, so PostgreSQL recovered its write-ahead log on the next start. If either process exits on its own, the container stops the other and exits with that status, so a restart policy can act on it.
+
 ### Container health check
 
 The published Docker image declares a `HEALTHCHECK` that probes `/health` on the configured `PORT`. Kubernetes deployments should additionally configure a readiness probe against `/ready`:
@@ -399,6 +414,106 @@ readinessProbe:
   periodSeconds: 10
 ```
 
+## Upgrading from 3.x to 4.0
+
+Version 4.0 upgrades `jinaga` to 6.17 and `jinaga-server` to 3.9. Most of what changes is fixed behaviour, but four things need your attention: some policy and subscription files that 3.x loaded are now refused, the database schema gains a constraint, facts over 1 MiB are refused, and some feeds are read again from the start.
+
+### What changes
+
+- **Refused specifications.** The parser now refuses a disconnected specification (two parts that no condition joins) and one whose feeds would be a product of two chains. A `.policy` or `.subscription` file that contains one makes initialization fail: `/ready` answers `initialization failed`, and the log names the specification and its parts. In requests, `/read` and `/feeds` answer `400` where 3.x returned an empty result or a cross product. Check your files before you upgrade, as described below.
+- **Edge order.** Every link from a fact to its predecessor should run from a lower fact id to a higher one. 4.0 saves facts in that order, and the schema now records it as the constraint `ck_edge_successor_after_predecessor`. A database written by 3.x may hold links that run the other way, because 3.x stored a batch in the order it arrived. Nothing is wrong with those facts, but while they exist the server cannot use a faster form of feed query, and it says so in the log.
+- **Save line limit.** A graph-format save carrying a fact over 1 MiB is refused with `413`. See `JINAGA_MAX_SAVE_LINE_BYTES`.
+- **Feed hashes.** Feeds of specifications that repeat a label, or that restore a fact through more than one negative condition, get new hashes. Clients and downstream replicators read those feeds once from the start, and then continue as before. Downstream replicators also now receive facts that 3.x missed for such specifications.
+- **Saves are serialized.** Saves that insert facts now take a database lock, so that a reader paging a feed never skips a fact that commits late. Throughput of concurrent writers is lower.
+- **Clean shutdown.** The container now stops cleanly on `docker stop`. See [Stopping the container](#stopping-the-container).
+
+Do not run a 3.x replicator and a 4.0 replicator against the same database at the same time.
+
+### Before you upgrade
+
+1. **Check your policy and subscription files with 4.0.** Start a throwaway 4.0 container with your files mounted and no data folder, and ask whether it is ready:
+
+   ```bash
+   docker run -d --rm --name replicator-check -p 18080:8080 \
+     -v /path/to/your/policies:/var/lib/replicator/policies:ro \
+     -v /path/to/your/subscriptions:/var/lib/replicator/subscriptions:ro \
+     -v /path/to/your/authentication:/var/lib/replicator/authentication:ro \
+     jinaga/jinaga-replicator:4.0
+   sleep 15; curl -s localhost:18080/ready; docker logs replicator-check 2>&1 | grep -A3 "Error"
+   docker stop replicator-check
+   ```
+
+   `{"status":"ready"}` means every file loads. Otherwise the log names the file and the specification. The usual fix for a disconnected specification is to join its parts with a condition, or to split it into child specifications under a root with no matches, as the error message suggests.
+
+2. **Look for facts over the save line limit.** Facts already stored are still served, but a client or replicator that sends one again is refused. This query reads every fact, so run it at a quiet time:
+
+   ```bash
+   docker exec my-replicator psql -U postgres -d replicator -Atc \
+     "select count(*), max(octet_length((data->'fields')::text)) from fact where octet_length((data->'fields')::text) > 1048576"
+   ```
+
+   If the count is not zero, set `JINAGA_MAX_SAVE_LINE_BYTES` above the maximum.
+
+3. **Back up the data folder.** Stop the container and copy the folder mounted at `/var/lib/postgresql/data`.
+
+### Upgrade
+
+Start the 4.0 image with the same mounts and environment. On start, the container brings PostgreSQL up and applies `jinaga-server`'s `setup.sql` before the replicator opens the database. `/health` answers throughout, and `/ready` reports `database setup` until it is done. The log shows:
+
+```
+Database setup: applying /replicator/node_modules/jinaga-server/setup.sql to replicator.
+Database setup: complete.
+```
+
+The setup runs on every start, and does nothing once the schema is up to date. The first time, it adds the edge-order constraint, which takes an exclusive lock on the `edge` table while it scans it, so the first start on a large data folder takes longer. If it fails, the error is logged, and the replicator starts anyway with the schema as it was, since 3.x's schema serves correctly.
+
+A database created by 4.0 starts with the constraint in force. A database written by 3.x may log this warning when the first feed is read:
+
+```
+The public.edge constraint ck_edge_successor_after_predecessor is not validated, and N edges run from a higher fact id to a lower one, so feed pages keep their redundant bounds. Run repair-edge-order.sql to restore the order, which also validates the constraint.
+```
+
+The replicator serves correctly in this state. Repair the order when you can schedule it.
+
+If your replicator uses an external database (`JINAGA_POSTGRESQL` names another server), the container cannot upgrade it. Copy `setup.sql` out of the image with `docker cp my-replicator:/replicator/node_modules/jinaga-server/setup.sql .`, and run it with `psql -v ON_ERROR_STOP=1 -f setup.sql` as the owner of the tables.
+
+### Repair the edge order
+
+The repair gives each fact that is out of order, and every fact beneath it, a new id above the current highest. Ids only move up, so a client already paging a feed misses nothing; it receives the moved facts again, which is harmless, because clients recognize facts by hash. It runs in one transaction: if it fails, nothing changes. Running it again moves nothing.
+
+While it runs, the repair locks the fact tables, so every read, feed and save on the replicator waits for it. `/ready` still answers `200` during the repair, so requests hang rather than fail. Its duration grows with the number of facts it moves, and one out-of-order fact near the root of a graph moves everything beneath it.
+
+1. **Measure it on a copy.** Copy the data folder, start a second container on the copy on another port, and time the repair there (step 3, with the second container's name).
+2. **Choose a maintenance window, and back up the data folder.**
+3. **Run the repair** in the running container:
+
+   ```bash
+   docker exec my-replicator psql -v ON_ERROR_STOP=1 -U postgres -d replicator \
+     -f /replicator/node_modules/jinaga-server/repair-edge-order.sql
+   ```
+
+   It ends with `COMMIT` when it succeeds.
+4. **Check that the constraint is in force:**
+
+   ```bash
+   docker exec my-replicator psql -U postgres -d replicator -Atc \
+     "select convalidated from pg_constraint where conname = 'ck_edge_successor_after_predecessor'"
+   ```
+
+   This prints `t`.
+5. **Restart the replicator:** `docker restart my-replicator`. The server reads the constraint once, the first time it serves a feed, so it uses the faster query only after a restart. After the restart, the warning no longer appears.
+
+### Rolling back
+
+A 3.x replicator starts on a data folder that 4.0 has upgraded, repaired or not, and serves the same facts. It accepts saves from Jinaga clients, which send predecessors first. But it answers `500` to a save it would store out of order, because the new constraint refuses it. To roll back fully, drop the constraint:
+
+```bash
+docker exec my-replicator psql -U postgres -d replicator -c \
+  "ALTER TABLE public.edge DROP CONSTRAINT ck_edge_successor_after_predecessor"
+```
+
+The ids the repair moved stay as they are, which 3.x does not mind.
+
 ## Configuration
 
 The Jinaga Replicator can be configured using environment variables. Below are the available configuration options:
@@ -416,7 +531,11 @@ The Jinaga Replicator can be configured using environment variables. Below are t
 - `POSTGRES_CONNECTION_TIMEOUT_MILLIS`: How long, in milliseconds, a request waits for a connection to come free before failing. Default is `0`, which waits forever. Must be a whole number of at least `0`.
 
   An invalid value for any of the three pool variables, such as `30s` or `POSTGRES_POOL_MAX=0`, fails initialization: the process stays up, `/health` answers 200, and `/ready` and `/jinaga` answer 503 with `"reason": "initialization failed"`. An unset or empty variable takes the default.
-- `LOG_LEVEL`: The lowest severity that is logged: `debug`, `info`, `warn` or `error`. Default is `info`. An unset or empty value takes the default, and surrounding whitespace is ignored. Any other value, including a different case such as `DEBUG`, fails initialization the same way as an invalid pool variable, and the log names the value received and the accepted values. `debug` adds one line per listener, per match and per loop iteration. Use it to diagnose an incident, not for everyday operation, because it multiplies the size of the log. The level governs what the replicator logs to the console and to OpenTelemetry. Lines that `jinaga-server` writes directly to the console, such as the `Stream opened` and `Stream ended` lines, are not affected.
+- `LOG_LEVEL`: The lowest severity that is logged: `debug`, `info`, `warn` or `error`. Default is `info`. An unset or empty value takes the default, and surrounding whitespace is ignored. Any other value, including a different case such as `DEBUG`, fails initialization the same way as an invalid pool variable, and the log names the value received and the accepted values. `debug` adds one line per listener, per match and per loop iteration. Use it to diagnose an incident, not for everyday operation, because it multiplies the size of the log. The level governs what the replicator logs to the console and to OpenTelemetry. Since 4.0 this includes `jinaga-server`'s stream lines, such as `Stream opened` and `Stream ended`, which earlier versions wrote straight to the console at every level.
+- `JINAGA_MAX_SAVE_LINE_BYTES`: The largest line, in bytes, that a `POST /jinaga/save` in the graph format (`application/x-jinaga-graph-v1`, which the Jinaga client uses) may carry. A line holds one fact's fields, a public key or a signature, so in effect this is the largest fact the replicator accepts. A request with a longer line is refused with `413 Payload Too Large`, and nothing in it is saved. Default is `1048576` (1 MiB). Must be a whole number of at least `1`; any other value fails initialization.
+
+  The default is lower than `jinaga-server`'s own (16 MiB) on purpose. Facts are replicated to every node and client they are shared with and can never be changed, so large content belongs in a content store, with only its hash in a fact. A request over 1 MB is already refused by nginx's default `client_max_body_size`, and the Jinaga client sizes its save batches to stay under it, so a larger fact would not reach most replicators anyway. A smaller limit also bounds the memory a single request can hold before it is refused. If your application does store larger facts, raise the limit, and set the same value on every replicator in the mesh: a fact that one node accepts and another refuses stays queued on the node that accepted it.
+- `JINAGA_SKIP_DATABASE_SETUP`: Set to `true` to start without applying the database schema upgrade described in [Upgrading from 3.x to 4.0](#upgrading-from-3x-to-40). Default is `false`. Use it only if you apply `setup.sql` yourself, for example in a maintenance window on a very large database.
 - `OTEL_EXPORTER_OTLP_ENDPOINT`: The OpenTelemetry OTLP endpoint accepting gRPC. If not set, OpenTelemetry will not be enabled.
 - `OTEL_SERVICE_NAME`: The OpenTelemetry service name. Default is `jinaga-replicator`.
 
@@ -498,3 +617,5 @@ git pull
 npm version patch
 git push --follow-tags
 ```
+
+Use `npm version minor` or `npm version major` instead when the release calls for it. Before releasing, run the upgrade and feature harness in [`test/upgrade`](test/upgrade/README.md) against a release candidate.
