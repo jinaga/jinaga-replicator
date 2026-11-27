@@ -171,6 +171,34 @@ let r: H.Restaurant = { name: "r-${run}" }
 } => { rates = { sr: H.Rate [ sr->server: H.Server = s ] } => sr.value }`);
     check("F7 a share rule that repeats a label serves its rates",
       rates.status === 200 && rates.text.includes("20"), short(rates));
+  },
+
+  // F19: an existential condition that joins only a given (jinaga.js #434).
+  // The `given-only` fixture holds a share rule and a subscription of this
+  // shape, so the replicator being ready at all shows that both parsed.
+  async givenOnly() {
+    const root = { type: "H.Root", name: `given-only-${run}` };
+    await save(base, records({ type: "H.Item", root, name: "item" }));
+    // A lock on another root must not hold for this one.
+    await save(base, records({ type: "H.Lock", root: { type: "H.Root", name: `other-${run}` } }));
+    const spec = `
+let r: H.Root = { name: "given-only-${run}" }
+(r: H.Root) {
+    b: H.Item [
+        b->root: H.Root = r
+        !E { a: H.Lock [ a->root: H.Root = r ] }
+    ]
+} => b.name`;
+    const before = await read(base, spec);
+    check("F19 a condition on the given alone returns the item while no lock exists",
+      before.status === 200 && JSON.stringify(before.json) === JSON.stringify(["item"]), short(before));
+    const feedsBefore = await readFeeds(base, spec);
+    check("F19 the feeds of that share rule are served", feedsBefore.status === 200, feedsBefore.text || "");
+
+    await save(base, records({ type: "H.Lock", root }));
+    const after = await read(base, spec);
+    check("F19 it returns nothing once a lock on the given exists",
+      after.status === 200 && Array.isArray(after.json) && after.json.length === 0, short(after));
   }
 };
 

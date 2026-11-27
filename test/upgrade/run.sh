@@ -170,7 +170,7 @@ probes() {
       fi
       docker rm -f jr-probe >/dev/null
     done
-    for spec in "shapes open" "lineLimit open" "batch batch" "feeds feeds"; do
+    for spec in "shapes open" "lineLimit open" "batch batch" "feeds feeds" "givenOnly given-only"; do
       read -r group fixture <<<"$spec"
       start jr-probe "$img" $fixture 18090 -
       if wait_ready 18090 >/dev/null; then
@@ -199,7 +199,7 @@ probes() {
 }
 
 mesh() {
-  local pair img mode
+  local pair img mode given
   for pair in "$IMAGE_OLD old" "$IMAGE_NEW new"; do
     read -r img mode <<<"$pair"
     heading "Mesh on $img"
@@ -208,10 +208,14 @@ mesh() {
     wait_ready 18091 >/dev/null; wait_ready 18092 >/dev/null
     start jr-pusher "$img" open 18093 - -e REPLICATOR_UPSTREAM_1=http://jr-picky:8080/jinaga
     start jr-down "$img" downstream 18094 - -e REPLICATOR_UPSTREAM_1=http://jr-up:8080/jinaga
+    # F19: a subscription whose condition joins only its given.
+    start jr-given "$img" given-only 18095 - -e REPLICATOR_UPSTREAM_1=http://jr-up:8080/jinaga
     wait_ready 18093 >/dev/null; wait_ready 18094 >/dev/null
-    node mesh.mjs $mode | grep -E '^(PASS|FAIL|INFO)' | tee "$WORK/mesh.out"
+    if wait_ready 18095 >/dev/null; then given=ready; else given=failed; fi
+    GIVEN_ONLY=$given node mesh.mjs $mode | grep -E '^(PASS|FAIL|INFO)' | tee "$WORK/mesh.out"
     [ $mode = new ] && failures=$((failures + $(grep -c '^FAIL' "$WORK/mesh.out")))
-    docker rm -f jr-picky jr-up jr-pusher jr-down >/dev/null
+    [ $given = failed ] && docker logs jr-given 2>&1 | grep -m1 'Error initializing' | cut -c1-200 | sed 's/^/      /'
+    docker rm -f jr-picky jr-up jr-pusher jr-down jr-given >/dev/null
 
     # F12: an upstream that reports a feed decision this client does not know.
     docker rm -f jr-stub >/dev/null 2>&1
