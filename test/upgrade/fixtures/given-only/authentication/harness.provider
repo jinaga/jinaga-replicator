@@ -1,0 +1,7 @@
+{
+    "provider": "harness",
+    "issuer": "upgrade-harness",
+    "audience": "replicator",
+    "key_id": "harness",
+    "key": "upgrade-harness-shared-secret-not-for-production"
+}

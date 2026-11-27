@@ -15,7 +15,7 @@ npm run dev
 npm start
 ```
 
-There are no unit tests (`npm test` is a placeholder). Manual API tests live in `http/` and can be run with the HttpYac VS Code extension. `test/upgrade/` is a Docker harness for releases: `build-rc.sh [jinaga-server.tgz]` builds a candidate image (optionally against an unpublished jinaga-server tarball), and `run.sh` upgrades a data folder written by the previous release in place, then probes the release's features against both images (see `test/upgrade/README.md`).
+There are no unit tests (`npm test` is a placeholder). Manual API tests live in `http/` and can be run with the HttpYac VS Code extension. `test/upgrade/` is a Docker harness for releases: `build-rc.sh [package.tgz ...]` builds a candidate image (optionally against unpublished jinaga-server or jinaga tarballs), and `run.sh` upgrades a data folder written by the previous release in place, then probes the release's features against both images (see `test/upgrade/README.md`).
 
 ## Architecture
 

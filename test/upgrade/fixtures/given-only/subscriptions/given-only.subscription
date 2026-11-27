@@ -1,0 +1,16 @@
+subscription {
+    let r: H.Root = {
+        name: "given-only"
+    }
+
+    (r: H.Root) {
+        b: H.Item [
+            b->root: H.Root = r
+            !E {
+                a: H.Lock [
+                    a->root: H.Root = r
+                ]
+            }
+        ]
+    } => b
+}

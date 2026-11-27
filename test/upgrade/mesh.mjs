@@ -39,6 +39,41 @@ for (let i = 0; i < 60 && names !== expected; i++) {
 const upNames = JSON.stringify(((await read(up, spec)).json || []).sort());
 check("F8 the downstream replica receives an event restored through two cancellers", names === expected, `downstream ${names}, upstream ${upNames}`);
 
+// F19: a subscription whose condition joins only its given. jr-given holds
+// the `given-only` fixture, which subscribes to jr-up for the items of the
+// root named "given-only" while that root has no lock.
+const given = "http://localhost:18095/jinaga";
+if (process.env.GIVEN_ONLY !== "ready") {
+  check("F19 the given-only fixture's policy and subscription load", false, "jr-given failed initialization");
+}
+else {
+  const root = { type: "H.Root", name: "given-only" };
+  const itemSpec = `let r: H.Root = { name: "given-only" }
+(r: H.Root) {
+    b: H.Item [
+        b->root: H.Root = r
+        !E { a: H.Lock [ a->root: H.Root = r ] }
+    ]
+} => b.name`;
+  const poll = async want => {
+    let got;
+    for (let i = 0; i < 60; i++) {
+      const r = await read(given, itemSpec);
+      got = JSON.stringify(Array.isArray(r.json) ? r.json : r.text);
+      if (got === want) break;
+      await sleep(500);
+    }
+    return got;
+  };
+  await save(up, records({ type: "H.Item", root, name: "item" }), { format: "graph" });
+  const before = await poll(JSON.stringify(["item"]));
+  check("F19 the subscription pulls the item while the root has no lock", before === JSON.stringify(["item"]), before);
+  await save(up, records({ type: "H.Lock", root }), { format: "graph" });
+  const after = await poll("[]");
+  check("F19 it pulls the lock, and the item drops out", after === "[]" && count("jr-given", "H.Lock") === 1,
+    `${after}, ${count("jr-given", "H.Lock")} lock(s) downstream`);
+}
+
 // Push: a fact saved to a replicator with an upstream. jinaga-server's
 // PostgresQueue does not yet store anything, so nothing is pushed.
 await save(pusher, records({ type: "H.Foo", n: Date.now() }), { format: "graph" });

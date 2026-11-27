@@ -1,0 +1,18 @@
+authorization {
+    any H.Root
+    any H.Item
+    any H.Lock
+}
+distribution {
+    share (r: H.Root) {
+        b: H.Item [
+            b->root: H.Root = r
+            !E {
+                a: H.Lock [
+                    a->root: H.Root = r
+                ]
+            }
+        ]
+    } => b
+    with everyone
+}
